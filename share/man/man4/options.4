@@ -243,16 +243,18 @@ See
 .Bl -ohang
 .It Cd option BUFCACHEPERCENT= Ns Ar integer
 The maximum percentage of DMA-reachable physical memory the buffer cache may use.
-.It Cd option EXT2FS_SYSTEM_FLAGS
-This option changes the behavior of the APPEND and IMMUTABLE flags
-for a file on an
-.Em EXT2FS
-filesystem.
-Without this option, the superuser or owner of the file can set and clear them.
-With this option, only the superuser can set them, and they can't be cleared
-if the securelevel is greater than 0.
-See also
-.Xr chflags 1 .
+.It Cd option FFS_SOFTUPDATES
+Enables a scheme that uses partial ordering of buffer cache operations
+to allow metadata updates in FFS to happen asynchronously, increasing write
+performance significantly.
+Normally, the FFS filesystem writes metadata updates synchronously which exacts
+a performance penalty in favor of filesystem integrity.
+With soft updates, the performance of asynchronous writes is gained while
+retaining the safety of synchronous metadata updates.
+.Pp
+Soft updates must be enabled on a per-filesystem basis.
+See
+.Xr mount 8 .
 .It Cd option FIFO
 Adds support for
 .At V
