@@ -132,6 +132,7 @@ int	thrkill(pid_t _tid, int _signum, void *_tcb);
 int	sigwait(const sigset_t *__restrict, int *__restrict);
 #endif
 #if __BSD_VISIBLE ||  __POSIX_VISIBLE >= 200809
+void	psiginfo(const siginfo_t *, const char *);
 void	psignal(unsigned int, const char *);
 #endif
 #endif /* __BSD_VISIBLE || __POSIX_VISIBLE || __XPG_VISIBLE */

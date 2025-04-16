@@ -61,3 +61,9 @@ psignal(unsigned int sig, const char *s)
 	iov[niov+1].iov_len = 1;
 	(void)writev(STDERR_FILENO, iov, niov+2);
 }
+
+void
+psiginfo(const siginfo_t *si, const char *s)
+{
+	psignal(si->si_signo, s);
+}
