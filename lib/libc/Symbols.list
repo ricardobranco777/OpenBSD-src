@@ -745,6 +745,7 @@ posix_spawnattr_setschedpolicy
 posix_spawnattr_setsigdefault
 posix_spawnattr_setsigmask
 posix_spawnp
+psiginfo
 psignal
 pw_dup
 raise

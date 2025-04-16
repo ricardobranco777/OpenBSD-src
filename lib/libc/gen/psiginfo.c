@@ -1,4 +1,4 @@
-/*	$OpenBSD: psignal.c,v 1.10 2015/08/31 02:53:57 guenther Exp $ */
+/*	$OpenBSD	*/
 /*
  * Copyright (c) 1983, 1993
  *	The Regents of the University of California.  All rights reserved.
@@ -29,36 +29,14 @@
  */
 
 /*
- * Print the name of the signal indicated
+ * Print the signal information
  * along with the supplied message.
  */
 #include <sys/types.h>
-#include <sys/uio.h>
 #include <signal.h>
-#include <string.h>
-#include <unistd.h>
-#include <limits.h>
 
 void
-psignal(unsigned int sig, const char *s)
+psiginfo(const siginfo_t *si, const char *s)
 {
-	static char buf[NL_TEXTMAX];
-	const char *c;
-	struct iovec iov[4];
-	int niov = 0;
-
-	c = __strsignal(sig, buf);
-	if (s && *s) {
-		iov[0].iov_base = (void *)s;
-		iov[0].iov_len = strlen(s);
-		iov[1].iov_base = ": ";
-		iov[1].iov_len = 2;
-		niov = 2;
-	}
-	iov[niov].iov_base = (void *)c;
-	iov[niov].iov_len = strlen(c);
-	iov[niov+1].iov_base = "\n";
-	iov[niov+1].iov_len = 1;
-	(void)writev(STDERR_FILENO, iov, niov+2);
+	psignal(si->si_signo, s);
 }
-DEF_WEAK(psignal);

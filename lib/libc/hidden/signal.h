@@ -52,7 +52,8 @@ PROTO_NORMAL(__errno);
 PROTO_DEPRECATED(bsd_signal);
 PROTO_NORMAL(kill);             /* wrap to ban SIGTHR? */
 PROTO_DEPRECATED(killpg);
-PROTO_DEPRECATED(psignal);
+PROTO_DEPRECATED(psiginfo);
+PROTO_NORMAL(psignal);
 PROTO_DEPRECATED(pthread_sigmask);
 PROTO_NORMAL(raise);
 PROTO_WRAP(sigaction);

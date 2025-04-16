@@ -14,8 +14,8 @@ SRCS+=  alarm.c assert.c auth_subr.c authenticate.c \
         getloadavg.c getlogin.c getmntinfo.c getnetgrent.c getpagesize.c \
         getprogname.c getpwent.c getttyent.c getusershell.c glob.c \
         initgroups.c isatty.c isctype.c isfdtype.c isfinite.c isinf.c \
-        isnan.c isnormal.c signbit.c lockf.c login_cap.c nice.c \
-        nlist.c nftw.c opendir.c pause.c popen.c posix_spawn.c psignal.c \
+        isnan.c isnormal.c signbit.c lockf.c login_cap.c nice.c nlist.c \
+        nftw.c opendir.c pause.c popen.c posix_spawn.c psignal.c psiginfo.c \
         pw_dup.c pwcache.c raise.c readdir.c readdir_r.c readpassphrase.c \
         rewinddir.c scandir.c seekdir.c setdomainname.c sethostname.c \
         setprogname.c setmode.c setproctitle.c shm_open.c \

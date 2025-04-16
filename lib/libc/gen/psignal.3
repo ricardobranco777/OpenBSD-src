@@ -27,11 +27,12 @@
 .\" OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 .\" SUCH DAMAGE.
 .\"
-.Dd $Mdocdate: May 16 2019 $
+.Dd $Mdocdate: Apr 16 2025 $
 .Dt PSIGNAL 3
 .Os
 .Sh NAME
 .Nm psignal ,
+.Nm psiginfo ,
 .Nm sys_siglist ,
 .Nm sys_signame
 .Nd system signal messages
@@ -39,6 +40,7 @@
 .In signal.h
 .Ft void
 .Fn psignal "unsigned int sig" "const char *s"
+.Fn psiginfo "const siginfo_t *si" "const char *s"
 .Vt extern char *sys_siglist[];
 .Vt extern char *sys_signame[];
 .Sh DESCRIPTION
@@ -64,6 +66,16 @@ the string
 .Dq Unknown signal
 is produced.
 .Pp
+The
+.Fn psiginfo
+function is similar to
+.Fn psignal ,
+except that the signal number information is taken from the
+.Fa si
+argument which is a
+.Vt siginfo_t
+structure.
+.Pp
 The message strings can be accessed directly using the external array
 .Va sys_siglist ,
 indexed by recognized signal numbers.
@@ -87,6 +99,13 @@ The
 .Fn psignal
 function appeared in
 .Bx 4.2 .
+The
+.Fn psiginfo
+function appeared in
+.Fx 15.0 ,
+.Nx 6.0 ,
+and
+.Dx 4.1 .
 .Sh CAVEATS
 On systems other than
 .Ox ,
