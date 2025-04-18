@@ -171,26 +171,6 @@ standard file system used on many CD-ROMs.
 It also supports Joliet extensions.
 See
 .Xr mount_cd9660 8 .
-.It Cd option EXT2FS
-Includes code implementing the Second Extended File System
-.Em ( EXT2FS ) ,
-commonly used on the Linux operating system.
-This option is provided here for compatibility.
-Some specific features of
-.Em EXT2FS
-like the "behavior on errors" are not implemented.
-This file system
-can't be used with
-.Vt uid_t
-or
-.Vt gid_t
-values greater than 65535.
-Also, the filesystem will not function correctly on architectures with
-differing byte-orders.
-That is, a big-endian machine will not be able to read an
-ext2fs filesystem created on an i386 or other little-endian machine.
-See
-.Xr mount_ext2fs 8 .
 .It Cd option FFS
 Includes code implementing the Berkeley Fast File System
 .Em ( FFS ) .
