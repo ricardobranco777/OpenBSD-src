@@ -1,0 +1,5 @@
+include "arch/amd64/conf/GENERIC.MP"
+
+option EXT2FS_SYSTEM_FLAGS
+
+rmoption NTFS
