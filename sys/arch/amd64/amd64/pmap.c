@@ -1,4 +1,4 @@
-/*	$OpenBSD: pmap.c,v 1.174 2024/09/20 02:00:46 jsg Exp $	*/
+/*	$OpenBSD: pmap.c,v 1.178 2024/11/02 07:58:58 mpi Exp $	*/
 /*	$NetBSD: pmap.c,v 1.3 2003/05/08 18:13:13 thorpej Exp $	*/
 
 /*
@@ -338,6 +338,7 @@ void pmap_do_remove(struct pmap *, vaddr_t, vaddr_t, int);
 void pmap_remove_ept(struct pmap *, vaddr_t, vaddr_t);
 void pmap_do_remove_ept(struct pmap *, vaddr_t);
 int pmap_enter_ept(struct pmap *, vaddr_t, paddr_t, vm_prot_t);
+void pmap_shootept(struct pmap *, int);
 #endif /* NVMM > 0 */
 int pmap_remove_pte(struct pmap *, struct vm_page *, pt_entry_t *,
     vaddr_t, int, struct pv_entry **);
@@ -387,7 +388,11 @@ pmap_is_curpmap(struct pmap *pmap)
 static inline int
 pmap_is_active(struct pmap *pmap, struct cpu_info *ci)
 {
-	return pmap == pmap_kernel() || pmap == ci->ci_proc_pmap;
+	return (pmap == pmap_kernel() || pmap == ci->ci_proc_pmap
+#if NVMM > 0
+	    || (pmap_is_ept(pmap) && pmap == ci->ci_ept_pmap)
+#endif /* NVMM > 0 */
+	    );
 }
 #endif
 
@@ -416,7 +421,7 @@ pmap_map_ptes(struct pmap *pmap)
 {
 	paddr_t cr3;
 
-	KASSERT(pmap->pm_type != PMAP_TYPE_EPT);
+	KASSERT(!pmap_is_ept(pmap));
 
 	/* the kernel's pmap is always accessible */
 	if (pmap == pmap_kernel())
@@ -1786,7 +1791,7 @@ void
 pmap_remove(struct pmap *pmap, vaddr_t sva, vaddr_t eva)
 {
 #if NVMM > 0
-	if (pmap->pm_type == PMAP_TYPE_EPT)
+	if (pmap_is_ept(pmap))
 		pmap_remove_ept(pmap, sva, eva);
 	else
 #endif /* NVMM > 0 */
@@ -2261,27 +2266,6 @@ pmap_unwire(struct pmap *pmap, vaddr_t va)
 #endif
 }
 
-#if 0
-/*
- * pmap_collect: free resources held by a pmap
- *
- * => optional function.
- * => called when a process is swapped out to free memory.
- */
-
-void
-pmap_collect(struct pmap *pmap)
-{
-	/*
-	 * free all of the pt pages by removing the physical mappings
-	 * for its entire address space.
-	 */
-
-	pmap_do_remove(pmap, VM_MIN_ADDRESS, VM_MAX_ADDRESS,
-	    PMAP_REMOVE_SKIPWIRED);
-}
-#endif
-
 void
 pmap_enter_special(vaddr_t va, paddr_t pa, vm_prot_t prot)
 {
@@ -2437,7 +2421,7 @@ pmap_convert(struct pmap *pmap, int mode)
 	mtx_enter(&pmap->pm_mtx);
 	pmap->pm_type = mode;
 
-	if (mode == PMAP_TYPE_EPT) {
+	if (pmap_is_ept(pmap)) {
 		/* Clear PML4 */
 		pte = (pt_entry_t *)pmap->pm_pdir;
 		memset(pte, 0, PAGE_SIZE);
@@ -2455,7 +2439,6 @@ void
 pmap_remove_ept(struct pmap *pmap, vaddr_t sgpa, vaddr_t egpa)
 {
 	vaddr_t v;
-	struct vmx_invept_descriptor vid;
 
 	mtx_enter(&pmap->pm_mtx);
 
@@ -2464,15 +2447,11 @@ pmap_remove_ept(struct pmap *pmap, vaddr_t sgpa, vaddr_t egpa)
 	for (v = sgpa; v < egpa + PAGE_SIZE; v += PAGE_SIZE)
 		pmap_do_remove_ept(pmap, v);
 
-	if (pmap->eptp != 0) {
-		memset(&vid, 0, sizeof(vid));
-		vid.vid_eptp = pmap->eptp;
-		DPRINTF("%s: flushing EPT TLB for EPTP 0x%llx\n", __func__,
-		    vid.vid_eptp);
-		invept(IA32_VMX_INVEPT_SINGLE_CTX, &vid);
-	}
+	pmap_shootept(pmap, 1);
 
 	mtx_leave(&pmap->pm_mtx);
+
+	pmap_tlb_shootwait();
 }
 
 void
@@ -2757,7 +2736,7 @@ pmap_enter(struct pmap *pmap, vaddr_t va, paddr_t pa, vm_prot_t prot, int flags)
 	paddr_t scr3;
 
 #if NVMM > 0
-	if (pmap->pm_type == PMAP_TYPE_EPT)
+	if (pmap_is_ept(pmap))
 		return pmap_enter_ept(pmap, va, pa, prot);
 #endif /* NVMM > 0 */
 
@@ -3215,6 +3194,12 @@ volatile vaddr_t tlb_shoot_addr1 __attribute__((section(".kudata")));
 volatile vaddr_t tlb_shoot_addr2 __attribute__((section(".kudata")));
 volatile int tlb_shoot_first_pcid __attribute__((section(".kudata")));
 
+#if NVMM > 0
+#include <amd64/vmmvar.h>
+volatile uint64_t ept_shoot_mode __attribute__((section(".kudata")));
+volatile struct vmx_invept_descriptor ept_shoot_vid
+    __attribute__((section(".kudata")));
+#endif /* NVMM > 0 */
 
 /* Obtain the "lock" for TLB shooting */
 static inline int
@@ -3363,7 +3348,6 @@ pmap_tlb_shoottlb(struct pmap *pm, int shootself)
 
 	if (wait) {
 		int s = pmap_start_tlb_shoot(wait, __func__);
-
 		CPU_INFO_FOREACH(cii, ci) {
 			if ((mask & (1ULL << ci->ci_cpuid)) == 0)
 				continue;
@@ -3383,6 +3367,56 @@ pmap_tlb_shoottlb(struct pmap *pm, int shootself)
 		}
 	}
 }
+
+#if NVMM > 0
+/*
+ * pmap_shootept: similar to pmap_tlb_shoottlb, but for remotely invalidating
+ * EPT using invept.
+ */
+void
+pmap_shootept(struct pmap *pm, int shootself)
+{
+	struct cpu_info *ci, *self = curcpu();
+	struct vmx_invept_descriptor vid;
+	CPU_INFO_ITERATOR cii;
+	long wait = 0;
+	u_int64_t mask = 0;
+
+	KASSERT(pmap_is_ept(pm));
+
+	CPU_INFO_FOREACH(cii, ci) {
+		if (ci == self || !pmap_is_active(pm, ci) ||
+		    !(ci->ci_flags & CPUF_RUNNING) ||
+		    !(ci->ci_flags & CPUF_VMM))
+			continue;
+		mask |= (1ULL << ci->ci_cpuid);
+		wait++;
+	}
+
+	if (wait) {
+		int s = pmap_start_tlb_shoot(wait, __func__);
+
+		ept_shoot_mode = self->ci_vmm_cap.vcc_vmx.vmx_invept_mode;
+		ept_shoot_vid.vid_eptp = pm->eptp;
+		ept_shoot_vid.vid_reserved = 0;
+
+		CPU_INFO_FOREACH(cii, ci) {
+			if ((mask & (1ULL << ci->ci_cpuid)) == 0)
+				continue;
+			if (x86_fast_ipi(ci, LAPIC_IPI_INVEPT) != 0)
+				panic("%s: ipi failed", __func__);
+		}
+
+		splx(s);
+	}
+
+	if (shootself && (self->ci_flags & CPUF_VMM)) {
+		vid.vid_eptp = pm->eptp;
+		vid.vid_reserved = 0;
+		invept(self->ci_vmm_cap.vcc_vmx.vmx_invept_mode, &vid);
+	}
+}
+#endif /* NVMM > 0 */
 
 void
 pmap_tlb_shootwait(void)
@@ -3461,4 +3495,22 @@ pmap_tlb_shoottlb(struct pmap *pm, int shootself)
 		}
 	}
 }
+
+#if NVMM > 0
+void
+pmap_shootept(struct pmap *pm, int shootself)
+{
+	struct cpu_info *self = curcpu();
+	struct vmx_invept_descriptor vid;
+
+	KASSERT(pmap_is_ept(pm));
+
+	if (shootself && (self->ci_flags & CPUF_VMM)) {
+		vid.vid_eptp = pm->eptp;
+		vid.vid_reserved = 0;
+		invept(self->ci_vmm_cap.vcc_vmx.vmx_invept_mode, &vid);
+	}
+}
+#endif /* NVMM > 0 */
+
 #endif /* MULTIPROCESSOR */

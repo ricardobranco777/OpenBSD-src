@@ -1,4 +1,4 @@
-/*	$OpenBSD: crypto_arch.h,v 1.1 2024/08/11 13:02:39 jsing Exp $ */
+/*	$OpenBSD: crypto_arch.h,v 1.5 2025/02/14 12:01:58 jsing Exp $ */
 /*
  * Copyright (c) 2024 Joel Sing <jsing@openbsd.org>
  *
@@ -15,8 +15,19 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <stdint.h>
+
 #ifndef HEADER_CRYPTO_ARCH_H
 #define HEADER_CRYPTO_ARCH_H
+
+#define HAVE_CRYPTO_CPU_CAPS_INIT
+#define HAVE_CRYPTO_CPU_CAPS_IA32
+
+#ifndef __ASSEMBLER__
+extern uint64_t crypto_cpu_caps_amd64;
+#endif
+
+#define CRYPTO_CPU_CAPS_AMD64_SHA	(1ULL << 0)
 
 #ifndef OPENSSL_NO_ASM
 
@@ -28,6 +39,15 @@
 
 #define HAVE_RC4_INTERNAL
 #define HAVE_RC4_SET_KEY_INTERNAL
+
+#define HAVE_SHA1_BLOCK_DATA_ORDER
+#define HAVE_SHA1_BLOCK_GENERIC
+
+#define HAVE_SHA256_BLOCK_DATA_ORDER
+#define HAVE_SHA256_BLOCK_GENERIC
+
+#define HAVE_SHA512_BLOCK_DATA_ORDER
+#define HAVE_SHA512_BLOCK_GENERIC
 
 #endif
 

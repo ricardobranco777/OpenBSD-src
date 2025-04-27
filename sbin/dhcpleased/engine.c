@@ -1,4 +1,4 @@
-/*	$OpenBSD: engine.c,v 1.49 2024/08/26 06:06:04 florian Exp $	*/
+/*	$OpenBSD: engine.c,v 1.56 2025/02/07 21:56:04 bluhm Exp $	*/
 
 /*
  * Copyright (c) 2017, 2021 Florian Obser <florian@openbsd.org>
@@ -226,7 +226,9 @@ engine(int debug, int verbose)
 	if ((iev_main = malloc(sizeof(struct imsgev))) == NULL)
 		fatal(NULL);
 
-	imsg_init(&iev_main->ibuf, 3);
+	if (imsgbuf_init(&iev_main->ibuf, 3) == -1)
+		fatal(NULL);
+	imsgbuf_allow_fdpass(&iev_main->ibuf);
 	iev_main->handler = engine_dispatch_main;
 
 	/* Setup event handlers. */
@@ -246,9 +248,9 @@ __dead void
 engine_shutdown(void)
 {
 	/* Close pipes. */
-	msgbuf_clear(&iev_frontend->ibuf.w);
+	imsgbuf_clear(&iev_frontend->ibuf);
 	close(iev_frontend->ibuf.fd);
-	msgbuf_clear(&iev_main->ibuf.w);
+	imsgbuf_clear(&iev_main->ibuf);
 	close(iev_main->ibuf.fd);
 
 	free(iev_frontend);
@@ -289,16 +291,18 @@ engine_dispatch_frontend(int fd, short event, void *bula)
 	uint32_t			 if_index, type;
 
 	if (event & EV_READ) {
-		if ((n = imsg_read(ibuf)) == -1 && errno != EAGAIN)
-			fatal("imsg_read error");
+		if ((n = imsgbuf_read(ibuf)) == -1)
+			fatal("imsgbuf_read error");
 		if (n == 0)	/* Connection closed. */
 			shut = 1;
 	}
 	if (event & EV_WRITE) {
-		if ((n = msgbuf_write(&ibuf->w)) == -1 && errno != EAGAIN)
-			fatal("msgbuf_write");
-		if (n == 0)	/* Connection closed. */
-			shut = 1;
+		if (imsgbuf_write(ibuf) == -1) {
+			if (errno == EPIPE)	/* Connection closed. */
+				shut = 1;
+			else
+				fatal("imsgbuf_write");
+		}
 	}
 
 	for (;;) {
@@ -404,16 +408,18 @@ engine_dispatch_main(int fd, short event, void *bula)
 	int				 shut = 0;
 
 	if (event & EV_READ) {
-		if ((n = imsg_read(ibuf)) == -1 && errno != EAGAIN)
-			fatal("imsg_read error");
+		if ((n = imsgbuf_read(ibuf)) == -1)
+			fatal("imsgbuf_read error");
 		if (n == 0)	/* Connection closed. */
 			shut = 1;
 	}
 	if (event & EV_WRITE) {
-		if ((n = msgbuf_write(&ibuf->w)) == -1 && errno != EAGAIN)
-			fatal("msgbuf_write");
-		if (n == 0)	/* Connection closed. */
-			shut = 1;
+		if (imsgbuf_write(ibuf) == -1) {
+			if (errno == EPIPE)	/* Connection closed. */
+				shut = 1;
+			else
+				fatal("imsgbuf_write");
+		}
 	}
 
 	for (;;) {
@@ -442,7 +448,8 @@ engine_dispatch_main(int fd, short event, void *bula)
 			if (iev_frontend == NULL)
 				fatal(NULL);
 
-			imsg_init(&iev_frontend->ibuf, fd);
+			if (imsgbuf_init(&iev_frontend->ibuf, fd) == -1)
+				fatal(NULL);
 			iev_frontend->handler = engine_dispatch_frontend;
 			iev_frontend->events = EV_READ;
 
@@ -737,7 +744,7 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 	struct in_addr		 nameservers[MAX_RDNS_COUNT];
 	struct dhcp_route	 routes[MAX_DHCP_ROUTES];
 	size_t			 rem, i;
-	uint32_t		 sum, usum, lease_time = 0, renewal_time = 0;
+	uint32_t		 lease_time = 0, renewal_time = 0;
 	uint32_t		 rebinding_time = 0;
 	uint32_t		 ipv6_only_time = 0;
 	uint8_t			*p, dho = DHO_PAD, dho_len, slen;
@@ -843,16 +850,14 @@ parse_dhcp(struct dhcpleased_iface *iface, struct imsg_dhcp *dhcp)
 	p += sizeof(*udp);
 	rem -= sizeof(*udp);
 
-	if ((dhcp->csumflags & M_UDP_CSUM_IN_OK) == 0) {
-		usum = udp->uh_sum;
-		udp->uh_sum = 0;
-
-		sum = wrapsum(checksum((uint8_t *)udp, sizeof(*udp),
+	if ((dhcp->csumflags & M_UDP_CSUM_IN_OK) == 0 &&
+	    udp->uh_sum != 0) {
+		udp->uh_sum = wrapsum(checksum((uint8_t *)udp, sizeof(*udp),
 		    checksum(p, rem,
 		    checksum((uint8_t *)&ip->ip_src, 2 * sizeof(ip->ip_src),
 		    IPPROTO_UDP + ntohs(udp->uh_ulen)))));
 
-		if (usum != 0 && usum != sum) {
+		if (udp->uh_sum != 0) {
 			log_warnx("%s: bad UDP checksum", __func__);
 			return;
 		}

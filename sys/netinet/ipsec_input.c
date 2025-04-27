@@ -1,4 +1,4 @@
-/*	$OpenBSD: ipsec_input.c,v 1.206 2023/09/16 09:33:27 mpi Exp $	*/
+/*	$OpenBSD: ipsec_input.c,v 1.209 2025/03/04 15:11:30 bluhm Exp $	*/
 /*
  * The authors of this code are John Ioannidis (ji@tla.org),
  * Angelos D. Keromytis (kermit@csd.uch.gr) and
@@ -86,6 +86,11 @@
 
 #include "bpfilter.h"
 
+/*
+ * Locks used to protect data:
+ *	a	atomic
+ */
+
 void ipsec_common_ctlinput(u_int, int, struct sockaddr *, void *, int);
 
 #ifdef ENCDEBUG
@@ -114,8 +119,8 @@ int ipsec_exp_first_use = IPSEC_DEFAULT_EXP_FIRST_USE;
 int ipsec_expire_acquire = IPSEC_DEFAULT_EXPIRE_ACQUIRE;
 
 int esp_enable = 1;
-int ah_enable = 1;
-int ipcomp_enable = 0;
+int ah_enable = 1;		/* [a] */
+int ipcomp_enable = 0;		/* [a] */
 
 const struct sysctl_bounded_args espctl_vars[] = {
 	{ESPCTL_ENABLE, &esp_enable, 0, 1},
@@ -181,7 +186,7 @@ ipsec_init(void)
  */
 int
 ipsec_common_input(struct mbuf **mp, int skip, int protoff, int af, int sproto,
-    int udpencap)
+    int udpencap, struct netstack *ns)
 {
 #define IPSEC_ISTAT(x,y,z) do {			\
 	if (sproto == IPPROTO_ESP)		\
@@ -335,7 +340,7 @@ ipsec_common_input(struct mbuf **mp, int skip, int protoff, int af, int sproto,
 	 * Call appropriate transform and return -- callback takes care of
 	 * everything else.
 	 */
-	prot = (*(tdbp->tdb_xform->xf_input))(mp, tdbp, skip, protoff);
+	prot = (*(tdbp->tdb_xform->xf_input))(mp, tdbp, skip, protoff, ns);
 	if (prot == IPPROTO_DONE) {
 		ipsecstat_inc(ipsec_idrops);
 		tdbstat_inc(tdbp, tdb_idrops);
@@ -358,7 +363,8 @@ ipsec_common_input(struct mbuf **mp, int skip, int protoff, int af, int sproto,
  * filtering and other sanity checks on the processed packet.
  */
 int
-ipsec_common_input_cb(struct mbuf **mp, struct tdb *tdbp, int skip, int protoff)
+ipsec_common_input_cb(struct mbuf **mp, struct tdb *tdbp, int skip,
+    int protoff, struct netstack *ns)
 {
 	struct mbuf *m = *mp;
 	int af, sproto;
@@ -558,7 +564,7 @@ ipsec_common_input_cb(struct mbuf **mp, struct tdb *tdbp, int skip, int protoff)
 			if (sc == NULL)
 				goto baddone;
 
-			sec_input(sc, af, prot, m);
+			sec_input(sc, af, prot, m, ns);
 			sec_put(sc);
 			return IPPROTO_DONE;
 		}
@@ -673,8 +679,6 @@ int
 ah_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
     size_t newlen)
 {
-	int error;
-
 	/* All sysctl names at this level are terminal. */
 	if (namelen != 1)
 		return (ENOTDIR);
@@ -683,11 +687,8 @@ ah_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
 	case AHCTL_STATS:
 		return ah_sysctl_ahstat(oldp, oldlenp, newp);
 	default:
-		NET_LOCK();
-		error = sysctl_bounded_arr(ahctl_vars, nitems(ahctl_vars), name,
+		return sysctl_bounded_arr(ahctl_vars, nitems(ahctl_vars), name,
 		    namelen, oldp, oldlenp, newp, newlen);
-		NET_UNLOCK();
-		return (error);
 	}
 }
 
@@ -706,8 +707,6 @@ int
 ipcomp_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
     size_t newlen)
 {
-	int error;
-
 	/* All sysctl names at this level are terminal. */
 	if (namelen != 1)
 		return (ENOTDIR);
@@ -716,12 +715,9 @@ ipcomp_sysctl(int *name, u_int namelen, void *oldp, size_t *oldlenp, void *newp,
 	case IPCOMPCTL_STATS:
 		return ipcomp_sysctl_ipcompstat(oldp, oldlenp, newp);
 	default:
-		NET_LOCK();
-		error = sysctl_bounded_arr(ipcompctl_vars,
+		return sysctl_bounded_arr(ipcompctl_vars,
 		    nitems(ipcompctl_vars), name, namelen, oldp, oldlenp,
 		    newp, newlen);
-		NET_UNLOCK();
-		return (error);
 	}
 }
 
@@ -752,14 +748,15 @@ ipsec_sysctl_ipsecstat(void *oldp, size_t *oldlenp, void *newp)
 }
 
 int
-ipsec_input_disabled(struct mbuf **mp, int *offp, int proto, int af)
+ipsec_input_disabled(struct mbuf **mp, int *offp, int proto, int af,
+    struct netstack *ns)
 {
 	switch (af) {
 	case AF_INET:
-		return rip_input(mp, offp, proto, af);
+		return rip_input(mp, offp, proto, af, ns);
 #ifdef INET6
 	case AF_INET6:
-		return rip6_input(mp, offp, proto, af);
+		return rip6_input(mp, offp, proto, af, ns);
 #endif
 	default:
 		unhandled_af(af);
@@ -767,7 +764,7 @@ ipsec_input_disabled(struct mbuf **mp, int *offp, int proto, int af)
 }
 
 int
-ah46_input(struct mbuf **mp, int *offp, int proto, int af)
+ah46_input(struct mbuf **mp, int *offp, int proto, int af, struct netstack *ns)
 {
 	int protoff;
 
@@ -775,8 +772,8 @@ ah46_input(struct mbuf **mp, int *offp, int proto, int af)
 #if NPF > 0
 	    ((*mp)->m_pkthdr.pf.flags & PF_TAG_DIVERTED) ||
 #endif
-	    !ah_enable)
-		return ipsec_input_disabled(mp, offp, proto, af);
+	    !atomic_load_int(&ah_enable))
+		return ipsec_input_disabled(mp, offp, proto, af, ns);
 
 	protoff = ipsec_protoff(*mp, *offp, af);
 	if (protoff < 0) {
@@ -786,7 +783,7 @@ ah46_input(struct mbuf **mp, int *offp, int proto, int af)
 		return IPPROTO_DONE;
 	}
 
-	return ipsec_common_input(mp, *offp, protoff, af, proto, 0);
+	return ipsec_common_input(mp, *offp, protoff, af, proto, 0, ns);
 }
 
 void
@@ -800,7 +797,8 @@ ah4_ctlinput(int cmd, struct sockaddr *sa, u_int rdomain, void *v)
 }
 
 int
-esp46_input(struct mbuf **mp, int *offp, int proto, int af)
+esp46_input(struct mbuf **mp, int *offp, int proto, int af,
+    struct netstack *ns)
 {
 	int protoff;
 
@@ -809,7 +807,7 @@ esp46_input(struct mbuf **mp, int *offp, int proto, int af)
 	    ((*mp)->m_pkthdr.pf.flags & PF_TAG_DIVERTED) ||
 #endif
 	    !esp_enable)
-		return ipsec_input_disabled(mp, offp, proto, af);
+		return ipsec_input_disabled(mp, offp, proto, af, ns);
 
 	protoff = ipsec_protoff(*mp, *offp, af);
 	if (protoff < 0) {
@@ -819,12 +817,13 @@ esp46_input(struct mbuf **mp, int *offp, int proto, int af)
 		return IPPROTO_DONE;
 	}
 
-	return ipsec_common_input(mp, *offp, protoff, af, proto, 0);
+	return ipsec_common_input(mp, *offp, protoff, af, proto, 0, ns);
 }
 
 /* IPv4 IPCOMP wrapper */
 int
-ipcomp46_input(struct mbuf **mp, int *offp, int proto, int af)
+ipcomp46_input(struct mbuf **mp, int *offp, int proto, int af,
+    struct netstack *ns)
 {
 	int protoff;
 
@@ -832,8 +831,8 @@ ipcomp46_input(struct mbuf **mp, int *offp, int proto, int af)
 #if NPF > 0
 	    ((*mp)->m_pkthdr.pf.flags & PF_TAG_DIVERTED) ||
 #endif
-	    !ipcomp_enable)
-		return ipsec_input_disabled(mp, offp, proto, af);
+	    !atomic_load_int(&ipcomp_enable))
+		return ipsec_input_disabled(mp, offp, proto, af, ns);
 
 	protoff = ipsec_protoff(*mp, *offp, af);
 	if (protoff < 0) {
@@ -843,7 +842,7 @@ ipcomp46_input(struct mbuf **mp, int *offp, int proto, int af)
 		return IPPROTO_DONE;
 	}
 
-	return ipsec_common_input(mp, *offp, protoff, af, proto, 0);
+	return ipsec_common_input(mp, *offp, protoff, af, proto, 0, ns);
 }
 
 void

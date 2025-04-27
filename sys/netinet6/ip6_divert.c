@@ -1,4 +1,4 @@
-/*      $OpenBSD: ip6_divert.c,v 1.97 2024/08/16 09:20:35 mvs Exp $ */
+/*      $OpenBSD: ip6_divert.c,v 1.101 2025/03/11 15:31:03 mvs Exp $ */
 
 /*
  * Copyright (c) 2009 Michele Marchetto <michele@openbsd.org>
@@ -66,8 +66,8 @@ u_int   divert6_recvspace = DIVERT_RECVSPACE;	/* [a] */
 #endif
 
 const struct sysctl_bounded_args divert6ctl_vars[] = {
-	{ DIVERT6CTL_RECVSPACE, &divert6_recvspace, 0, INT_MAX },
-	{ DIVERT6CTL_SENDSPACE, &divert6_sendspace, 0, INT_MAX },
+	{ DIVERT6CTL_RECVSPACE, &divert6_recvspace, 0, SB_MAX },
+	{ DIVERT6CTL_SENDSPACE, &divert6_sendspace, 0, SB_MAX },
 };
 
 const struct pr_usrreqs divert6_usrreqs = {
@@ -177,7 +177,7 @@ divert6_output(struct inpcb *inp, struct mbuf *m, struct mbuf *nam,
 			error = ENETDOWN;
 			goto fail;
 		}
-		ipv6_input(ifp, m);
+		ipv6_input(ifp, m, NULL);
 		if_put(ifp);
 	} else {
 		m->m_pkthdr.ph_rtableid = inp->inp_rtableid;
@@ -253,7 +253,7 @@ divert6_packet(struct mbuf *m, int dir, u_int16_t divert_port)
 
 	so = inp->inp_socket;
 	mtx_enter(&so->so_rcv.sb_mtx);
-	if (sbappendaddr(so, &so->so_rcv, sin6tosa(&sin6), m, NULL) == 0) {
+	if (sbappendaddr(&so->so_rcv, sin6tosa(&sin6), m, NULL) == 0) {
 		mtx_leave(&so->so_rcv.sb_mtx);
 		div6stat_inc(div6s_fullsock);
 		goto bad;
@@ -280,12 +280,11 @@ divert6_attach(struct socket *so, int proto, int wait)
 	if ((so->so_state & SS_PRIV) == 0)
 		return EACCES;
 
-	error = in_pcballoc(so, &divb6table, wait);
-	if (error)
-		return (error);
-
 	error = soreserve(so, atomic_load_int(&divert6_sendspace),
 	    atomic_load_int(&divert6_recvspace));
+	if (error)
+		return (error);
+	error = in_pcballoc(so, &divb6table, wait);
 	if (error)
 		return (error);
 

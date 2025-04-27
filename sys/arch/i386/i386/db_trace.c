@@ -1,4 +1,4 @@
-/*	$OpenBSD: db_trace.c,v 1.45 2024/06/07 10:14:29 jsg Exp $	*/
+/*	$OpenBSD: db_trace.c,v 1.47 2025/02/17 13:28:26 mpi Exp $	*/
 /*	$NetBSD: db_trace.c,v 1.18 1996/05/03 19:42:01 christos Exp $	*/
 
 /*
@@ -155,7 +155,7 @@ db_stack_trace_print(db_expr_t addr, int have_addr, db_expr_t count,
 	lastframe = 0;
 	while (count && frame != 0) {
 		int		narg;
-		char *		name;
+		const char *	name;
 		db_expr_t	offset;
 		Elf_Sym		*sym;
 
@@ -301,6 +301,7 @@ stacktrace_save_utrace(struct stacktrace *st)
 	KASSERT(INKERNEL(frame));
 	f = *frame;
 
+	curcpu()->ci_inatomic++;
 	while (st->st_count < STACKTRACE_MAX) {
 		if (f.f_retaddr != 0 && !INKERNEL(f.f_retaddr))
 			st->st_pc[st->st_count++] = f.f_retaddr;
@@ -321,6 +322,7 @@ stacktrace_save_utrace(struct stacktrace *st)
 		if (copyin(frame, &f, sizeof(f)) != 0)
 			break;
 	}
+	curcpu()->ci_inatomic--;
 }
 
 vaddr_t

@@ -1,4 +1,4 @@
-#	$OpenBSD: RAMDISK_CD,v 1.207 2024/08/14 14:40:45 patrick Exp $
+#	$OpenBSD: RAMDISK_CD,v 1.211 2025/02/19 21:33:10 kettenis Exp $
 
 machine		amd64
 maxusers	4
@@ -56,7 +56,9 @@ com1		at acpi? addr 0x2f8
 com2		at acpi? addr 0x3e8
 com*		at acpi?
 glkgpio*	at acpi?
+pckbc*		at acpi?
 
+efi0		at bios0
 mpbios0		at bios0
 
 cpu0		at mainbus0
@@ -235,6 +237,7 @@ msk*		at mskc?		#  each port of above
 em*		at pci?			# Intel Pro/1000 ethernet
 ixgb*		at pci?			# Intel Pro/10Gb ethernet
 ix*		at pci?			# Intel 82598EB 10Gb ethernet
+ixv*		at pci?			# Virtual Function of Intel 82599
 myx*		at pci?			# Myricom Myri-10G 10Gb ethernet
 oce*		at pci?			# Emulex OneConnect 10Gb ethernet
 sf*		at pci?			# Adaptec AIC-6915 ethernet
@@ -266,6 +269,7 @@ aq*		at pci?			# Aquantia aQtion Ethernet
 igc*		at pci?			# Intel I225 Ethernet
 ngbe*		at pci?			# WangXun WX1860 Ethernet
 dwqe*		at pci?			# Intel Elkhart Lake Ethernet
+ice*		at pci?			# Intel E810 100GbE
 
 acx*		at pci?			# TI ACX100/ACX111 (802.11b/g)
 acx*		at cardbus?		# TI ACX100/ACX111 (802.11b/g)

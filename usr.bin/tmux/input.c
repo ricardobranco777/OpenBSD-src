@@ -1,4 +1,4 @@
-/* $OpenBSD: input.c,v 1.229 2024/09/16 20:38:48 nicm Exp $ */
+/* $OpenBSD: input.c,v 1.233 2025/03/04 08:45:04 nicm Exp $ */
 
 /*
  * Copyright (c) 2007 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -93,7 +93,6 @@ struct input_ctx {
 	size_t			param_len;
 
 #define INPUT_BUF_START 32
-#define INPUT_BUF_LIMIT 1048576
 	u_char		       *input_buf;
 	size_t			input_len;
 	size_t			input_space;
@@ -134,7 +133,7 @@ static void printflike(2, 3) input_reply(struct input_ctx *, const char *, ...);
 static void	input_set_state(struct input_ctx *,
 		    const struct input_transition *);
 static void	input_reset_cell(struct input_ctx *);
-
+static void	input_report_current_theme(struct input_ctx *);
 static void	input_osc_4(struct input_ctx *, const char *);
 static void	input_osc_8(struct input_ctx *, const char *);
 static void	input_osc_10(struct input_ctx *, const char *);
@@ -244,6 +243,7 @@ enum input_csi_type {
 	INPUT_CSI_DECSTBM,
 	INPUT_CSI_DL,
 	INPUT_CSI_DSR,
+	INPUT_CSI_DSR_PRIVATE,
 	INPUT_CSI_ECH,
 	INPUT_CSI_ED,
 	INPUT_CSI_EL,
@@ -252,6 +252,7 @@ enum input_csi_type {
 	INPUT_CSI_IL,
 	INPUT_CSI_MODOFF,
 	INPUT_CSI_MODSET,
+	INPUT_CSI_QUERY_PRIVATE,
 	INPUT_CSI_RCP,
 	INPUT_CSI_REP,
 	INPUT_CSI_RM,
@@ -260,8 +261,8 @@ enum input_csi_type {
 	INPUT_CSI_SD,
 	INPUT_CSI_SGR,
 	INPUT_CSI_SM,
-	INPUT_CSI_SM_PRIVATE,
 	INPUT_CSI_SM_GRAPHICS,
+	INPUT_CSI_SM_PRIVATE,
 	INPUT_CSI_SU,
 	INPUT_CSI_TBC,
 	INPUT_CSI_VPA,
@@ -305,6 +306,8 @@ static const struct input_table_entry input_csi_table[] = {
 	{ 'm', ">", INPUT_CSI_MODSET },
 	{ 'n', "",  INPUT_CSI_DSR },
 	{ 'n', ">", INPUT_CSI_MODOFF },
+	{ 'n', "?", INPUT_CSI_DSR_PRIVATE },
+	{ 'p', "?$", INPUT_CSI_QUERY_PRIVATE },
 	{ 'q', " ", INPUT_CSI_DECSCUSR },
 	{ 'q', ">", INPUT_CSI_XDA },
 	{ 'r', "",  INPUT_CSI_DECSTBM },
@@ -729,6 +732,9 @@ static const struct input_transition input_state_consume_st_table[] = {
 	{ -1, -1, NULL, NULL }
 };
 
+/* Maximum of bytes allowed to read in a single input. */
+static size_t input_buffer_size = INPUT_BUF_DEFAULT_SIZE;
+
 /* Input table compare. */
 static int
 input_table_compare(const void *key, const void *value)
@@ -1145,7 +1151,6 @@ input_print(struct input_ctx *ictx)
 		ictx->cell.cell.attr |= GRID_ATTR_CHARSET;
 	else
 		ictx->cell.cell.attr &= ~GRID_ATTR_CHARSET;
-
 	utf8_set(&ictx->cell.cell.data, ictx->ch);
 	screen_write_collect_add(sctx, &ictx->cell.cell);
 
@@ -1194,7 +1199,7 @@ input_input(struct input_ctx *ictx)
 	available = ictx->input_space;
 	while (ictx->input_len + 1 >= available) {
 		available *= 2;
-		if (available > INPUT_BUF_LIMIT) {
+		if (available > input_buffer_size) {
 			ictx->flags |= INPUT_DISCARD;
 			return (0);
 		}
@@ -1214,6 +1219,10 @@ input_c0_dispatch(struct input_ctx *ictx)
 	struct screen_write_ctx	*sctx = &ictx->ctx;
 	struct window_pane	*wp = ictx->wp;
 	struct screen		*s = sctx->s;
+	struct grid_cell	 gc, first_gc;
+	u_int			 cx = s->cx, line = s->cy + s->grid->hsize;
+	u_int			 width;
+	int			 has_content = 0;
 
 	ictx->utf8started = 0; /* can't be valid UTF-8 */
 
@@ -1235,11 +1244,28 @@ input_c0_dispatch(struct input_ctx *ictx)
 			break;
 
 		/* Find the next tab point, or use the last column if none. */
+		grid_get_cell(s->grid, s->cx, line, &first_gc);
 		do {
-			s->cx++;
-			if (bit_test(s->tabs, s->cx))
+			if (!has_content) {
+				grid_get_cell(s->grid, cx, line, &gc);
+				if (gc.data.size != 1 ||
+				    *gc.data.data != ' ' ||
+				    !grid_cells_look_equal(&gc, &first_gc))
+					has_content = 1;
+			}
+			cx++;
+			if (bit_test(s->tabs, cx))
 				break;
-		} while (s->cx < screen_size_x(s) - 1);
+		} while (cx < screen_size_x(s) - 1);
+
+		width = cx - s->cx;
+		if (has_content || width > sizeof gc.data.data)
+			s->cx = cx;
+		else {
+			grid_get_cell(s->grid, s->cx, line, &gc);
+			grid_set_tab(&gc, width);
+			screen_write_collect_add(sctx, &gc);
+		}
 		break;
 	case '\012':	/* LF */
 	case '\013':	/* VT */
@@ -1349,7 +1375,7 @@ input_csi_dispatch(struct input_ctx *ictx)
 	struct screen_write_ctx	       *sctx = &ictx->ctx;
 	struct screen		       *s = sctx->s;
 	struct input_table_entry       *entry;
-	int				i, n, m, ek;
+	int				i, n, m, ek, set;
 	u_int				cx, bg = ictx->cell.cell.bg;
 
 	if (ictx->flags & INPUT_DISCARD)
@@ -1505,6 +1531,20 @@ input_csi_dispatch(struct input_ctx *ictx)
 		if (n != -1)
 			screen_write_deleteline(sctx, n, bg);
 		break;
+	case INPUT_CSI_DSR_PRIVATE:
+		switch (input_get(ictx, 0, 0, 0)) {
+		case 996:
+			input_report_current_theme(ictx);
+			break;
+		}
+		break;
+	case INPUT_CSI_QUERY_PRIVATE:
+		switch (input_get(ictx, 0, 0, 0)) {
+		case 2031:
+			input_reply(ictx, "\033[?2031;2$y");
+			break;
+		}
+		break;
 	case INPUT_CSI_DSR:
 		switch (input_get(ictx, 0, 0, 0)) {
 		case -1:
@@ -1592,6 +1632,11 @@ input_csi_dispatch(struct input_ctx *ictx)
 		if (~ictx->flags & INPUT_LAST)
 			break;
 
+		set = ictx->cell.set == 0 ? ictx->cell.g0set : ictx->cell.g1set;
+		if (set == 1)
+			ictx->cell.cell.attr |= GRID_ATTR_CHARSET;
+		else
+			ictx->cell.cell.attr &= ~GRID_ATTR_CHARSET;
 		utf8_copy(&ictx->cell.cell.data, &ictx->last);
 		for (i = 0; i < n; i++)
 			screen_write_collect_add(sctx, &ictx->cell.cell);
@@ -1750,6 +1795,9 @@ input_csi_dispatch_rm_private(struct input_ctx *ictx)
 		case 2004:
 			screen_write_mode_clear(sctx, MODE_BRACKETPASTE);
 			break;
+		case 2031:
+			screen_write_mode_clear(sctx, MODE_THEME_UPDATES);
+			break;
 		default:
 			log_debug("%s: unknown '%c'", __func__, ictx->ch);
 			break;
@@ -1844,6 +1892,9 @@ input_csi_dispatch_sm_private(struct input_ctx *ictx)
 			break;
 		case 2004:
 			screen_write_mode_set(sctx, MODE_BRACKETPASTE);
+			break;
+		case 2031:
+			screen_write_mode_set(sctx, MODE_THEME_UPDATES);
 			break;
 		default:
 			log_debug("%s: unknown '%c'", __func__, ictx->ch);
@@ -2633,84 +2684,6 @@ bad:
 	free(id);
 }
 
-/*
- * Get a client with a foreground for the pane. There isn't much to choose
- * between them so just use the first.
- */
-static int
-input_get_fg_client(struct window_pane *wp)
-{
-	struct window	*w = wp->window;
-	struct client	*loop;
-
-	TAILQ_FOREACH(loop, &clients, entry) {
-		if (loop->flags & CLIENT_UNATTACHEDFLAGS)
-			continue;
-		if (loop->session == NULL || !session_has(loop->session, w))
-			continue;
-		if (loop->tty.fg == -1)
-			continue;
-		return (loop->tty.fg);
-	}
-	return (-1);
-}
-
-/* Get a client with a background for the pane. */
-static int
-input_get_bg_client(struct window_pane *wp)
-{
-	struct window	*w = wp->window;
-	struct client	*loop;
-
-	TAILQ_FOREACH(loop, &clients, entry) {
-		if (loop->flags & CLIENT_UNATTACHEDFLAGS)
-			continue;
-		if (loop->session == NULL || !session_has(loop->session, w))
-			continue;
-		if (loop->tty.bg == -1)
-			continue;
-		return (loop->tty.bg);
-	}
-	return (-1);
-}
-
-/*
- * If any control mode client exists that has provided a bg color, return it.
- * Otherwise, return -1.
- */
-static int
-input_get_bg_control_client(struct window_pane *wp)
-{
-	struct client	*c;
-
-	if (wp->control_bg == -1)
-		return (-1);
-
-	TAILQ_FOREACH(c, &clients, entry) {
-		if (c->flags & CLIENT_CONTROL)
-			return (wp->control_bg);
-	}
-	return (-1);
-}
-
-/*
- * If any control mode client exists that has provided a fg color, return it.
- * Otherwise, return -1.
- */
-static int
-input_get_fg_control_client(struct window_pane *wp)
-{
-	struct client	*c;
-
-	if (wp->control_fg == -1)
-		return (-1);
-
-	TAILQ_FOREACH(c, &clients, entry) {
-		if (c->flags & CLIENT_CONTROL)
-			return (wp->control_fg);
-	}
-	return (-1);
-}
 
 /* Handle the OSC 10 sequence for setting and querying foreground colour. */
 static void
@@ -2723,11 +2696,11 @@ input_osc_10(struct input_ctx *ictx, const char *p)
 	if (strcmp(p, "?") == 0) {
 		if (wp == NULL)
 			return;
-		c = input_get_fg_control_client(wp);
+		c = window_pane_get_fg_control_client(wp);
 		if (c == -1) {
 			tty_default_colours(&defaults, wp);
 			if (COLOUR_DEFAULT(defaults.fg))
-				c = input_get_fg_client(wp);
+				c = window_pane_get_fg(wp);
 			else
 				c = defaults.fg;
 		}
@@ -2768,20 +2741,12 @@ static void
 input_osc_11(struct input_ctx *ictx, const char *p)
 {
 	struct window_pane	*wp = ictx->wp;
-	struct grid_cell	 defaults;
 	int			 c;
 
 	if (strcmp(p, "?") == 0) {
 		if (wp == NULL)
 			return;
-		c = input_get_bg_control_client(wp);
-		if (c == -1) {
-			tty_default_colours(&defaults, wp);
-			if (COLOUR_DEFAULT(defaults.bg))
-				c = input_get_bg_client(wp);
-			else
-				c = defaults.bg;
-		}
+		c = window_pane_get_bg(wp);
 		input_osc_colour_reply(ictx, 11, c);
 		return;
 	}
@@ -2793,7 +2758,7 @@ input_osc_11(struct input_ctx *ictx, const char *p)
 	if (ictx->palette != NULL) {
 		ictx->palette->bg = c;
 		if (wp != NULL)
-			wp->flags |= PANE_STYLECHANGED;
+			wp->flags |= (PANE_STYLECHANGED|PANE_THEMECHANGED);
 		screen_write_fullredraw(&ictx->ctx);
 	}
 }
@@ -2809,7 +2774,7 @@ input_osc_111(struct input_ctx *ictx, const char *p)
 	if (ictx->palette != NULL) {
 		ictx->palette->bg = 8;
 		if (wp != NULL)
-			wp->flags |= PANE_STYLECHANGED;
+			wp->flags |= (PANE_STYLECHANGED|PANE_THEMECHANGED);
 		screen_write_fullredraw(&ictx->ctx);
 	}
 }
@@ -2991,4 +2956,27 @@ input_reply_clipboard(struct bufferevent *bev, const char *buf, size_t len,
 		bufferevent_write(bev, out, outlen);
 	bufferevent_write(bev, end, strlen(end));
 	free(out);
+}
+
+/* Set input buffer size. */
+void
+input_set_buffer_size(size_t buffer_size)
+{
+	log_debug("%s: %lu -> %lu", __func__, input_buffer_size, buffer_size);
+	input_buffer_size = buffer_size;
+}
+
+static void
+input_report_current_theme(struct input_ctx *ictx)
+{
+	switch (window_pane_get_theme(ictx->wp)) {
+		case THEME_DARK:
+			input_reply(ictx, "\033[?997;1n");
+			break;
+		case THEME_LIGHT:
+			input_reply(ictx, "\033[?997;2n");
+			break;
+		case THEME_UNKNOWN:
+			break;
+	}
 }

@@ -1,4 +1,4 @@
-/*	$OpenBSD: output-ometric.c,v 1.11 2024/09/03 15:04:48 job Exp $ */
+/*	$OpenBSD: output-ometric.c,v 1.14 2025/04/03 14:29:44 tb Exp $ */
 /*
  * Copyright (c) 2022 Claudio Jeker <claudio@openbsd.org>
  *
@@ -42,11 +42,15 @@ set_common_stats(const struct repotalstats *in, struct ometric *metric,
 	    OKV("type", "state"), OKV("cert", "valid"), ol);
 	ometric_set_int_with_labels(metric, in->certs_fail,
 	    OKV("type", "state"), OKV("cert", "failed parse"), ol);
+	ometric_set_int_with_labels(metric, in->certs_nonfunc,
+	    OKV("type", "state"), OKV("cert", "non-functional"), ol);
 
 	ometric_set_int_with_labels(metric, in->mfts,
 	    OKV("type", "state"), OKV("manifest", "valid"), ol);
 	ometric_set_int_with_labels(metric, in->mfts_fail,
 	    OKV("type", "state"), OKV("manifest", "failed parse"), ol);
+	ometric_set_int_with_labels(metric, in->mfts_gap,
+	    OKV("type", "state"), OKV("manifest", "sequence gap"), ol);
 
 	ometric_set_int_with_labels(metric, in->roas,
 	    OKV("type", "state"), OKV("roa", "valid"), ol);
@@ -164,7 +168,8 @@ repo_stats(const struct repo *rp, const struct repostats *in, void *arg)
 
 int
 output_ometric(FILE *out, struct vrp_tree *vrps, struct brk_tree *brks,
-    struct vap_tree *vaps, struct vsp_tree *vsps, struct stats *st)
+    struct vap_tree *vaps, struct vsp_tree *vsps, struct nca_tree *ncas,
+    struct stats *st)
 {
 	struct olabels *ol;
 	const char *keys[4] = { "nodename", "domainname", "release", NULL };

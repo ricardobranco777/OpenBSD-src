@@ -1,4 +1,4 @@
-/*	$OpenBSD: sys_generic.c,v 1.158 2024/08/12 19:32:05 anton Exp $	*/
+/*	$OpenBSD: sys_generic.c,v 1.160 2024/12/30 02:46:00 guenther Exp $	*/
 /*	$NetBSD: sys_generic.c,v 1.24 1996/03/29 00:25:32 cgd Exp $	*/
 
 /*
@@ -382,11 +382,8 @@ dofilewritev(struct proc *p, int fd, struct uio *uio, int flags,
 		if (uio->uio_resid != cnt && (error == ERESTART ||
 		    error == EINTR || error == EWOULDBLOCK))
 			error = 0;
-		if (error == EPIPE) {
-			KERNEL_LOCK();
+		if (error == EPIPE)
 			ptsignal(p, SIGPIPE, STHREAD);
-			KERNEL_UNLOCK();
-		}
 	}
 	cnt -= uio->uio_resid;
 
@@ -494,7 +491,7 @@ sys_ioctl(struct proc *p, void *v, register_t *retval)
 			atomic_setbits_int(&fp->f_flag, FNONBLOCK);
 		else
 			atomic_clearbits_int(&fp->f_flag, FNONBLOCK);
-		error = (*fp->f_ops->fo_ioctl)(fp, FIONBIO, (caddr_t)&tmp, p);
+		error = 0;
 		break;
 
 	case FIOASYNC:

@@ -1,4 +1,4 @@
-/* $OpenBSD: ssl.h,v 1.242 2024/08/31 10:51:48 tb Exp $ */
+/* $OpenBSD: ssl.h,v 1.247 2025/03/12 14:03:55 jsing Exp $ */
 /* Copyright (C) 1995-1998 Eric Young (eay@cryptsoft.com)
  * All rights reserved.
  *
@@ -187,19 +187,13 @@ extern "C" {
 
 /*    VRS Additional Kerberos5 entries
  */
-#define SSL_TXT_KRB5_DES_64_CBC_SHA   SSL3_TXT_KRB5_DES_64_CBC_SHA
-#define SSL_TXT_KRB5_DES_192_CBC3_SHA SSL3_TXT_KRB5_DES_192_CBC3_SHA
 #define SSL_TXT_KRB5_RC4_128_SHA      SSL3_TXT_KRB5_RC4_128_SHA
 #define SSL_TXT_KRB5_IDEA_128_CBC_SHA SSL3_TXT_KRB5_IDEA_128_CBC_SHA
-#define SSL_TXT_KRB5_DES_64_CBC_MD5   SSL3_TXT_KRB5_DES_64_CBC_MD5
-#define SSL_TXT_KRB5_DES_192_CBC3_MD5 SSL3_TXT_KRB5_DES_192_CBC3_MD5
 #define SSL_TXT_KRB5_RC4_128_MD5      SSL3_TXT_KRB5_RC4_128_MD5
 #define SSL_TXT_KRB5_IDEA_128_CBC_MD5 SSL3_TXT_KRB5_IDEA_128_CBC_MD5
 
-#define SSL_TXT_KRB5_DES_40_CBC_SHA   SSL3_TXT_KRB5_DES_40_CBC_SHA
 #define SSL_TXT_KRB5_RC2_40_CBC_SHA   SSL3_TXT_KRB5_RC2_40_CBC_SHA
 #define SSL_TXT_KRB5_RC4_40_SHA	      SSL3_TXT_KRB5_RC4_40_SHA
-#define SSL_TXT_KRB5_DES_40_CBC_MD5   SSL3_TXT_KRB5_DES_40_CBC_MD5
 #define SSL_TXT_KRB5_RC2_40_CBC_MD5   SSL3_TXT_KRB5_RC2_40_CBC_MD5
 #define SSL_TXT_KRB5_RC4_40_MD5	      SSL3_TXT_KRB5_RC4_40_MD5
 
@@ -370,7 +364,7 @@ DECLARE_STACK_OF(SRTP_PROTECTION_PROFILE)
 typedef int (*tls_session_ticket_ext_cb_fn)(SSL *s, const unsigned char *data,
     int len, void *arg);
 typedef int (*tls_session_secret_cb_fn)(SSL *s, void *secret, int *secret_len,
-    STACK_OF(SSL_CIPHER) *peer_ciphers, SSL_CIPHER **cipher, void *arg);
+    STACK_OF(SSL_CIPHER) *peer_ciphers, const SSL_CIPHER **cipher, void *arg);
 
 /* Allow initial connection to servers that don't support RI */
 #define SSL_OP_LEGACY_SERVER_CONNECT			0x00000004L
@@ -395,6 +389,10 @@ typedef int (*tls_session_secret_cb_fn)(SSL *s, void *secret, int *secret_len,
 #define SSL_OP_NO_SESSION_RESUMPTION_ON_RENEGOTIATION	0x00010000L
 /* Disallow client initiated renegotiation. */
 #define SSL_OP_NO_CLIENT_RENEGOTIATION			0x00020000L
+/* Disallow client and server initiated renegotiation. */
+#define SSL_OP_NO_RENEGOTIATION				0x00040000L
+/* Allow client initiated renegotiation. */
+#define SSL_OP_ALLOW_CLIENT_RENEGOTIATION		0x00080000L
 /* If set, always create a new key when using tmp_dh parameters */
 #define SSL_OP_SINGLE_DH_USE				0x00100000L
 /* Set on servers to choose the cipher according to the server's
@@ -2239,7 +2237,10 @@ void ERR_load_SSL_strings(void);
 #define SSL_R_SSL_SESSION_ID_HAS_BAD_LENGTH		 303
 #define SSL_R_SSL_SESSION_ID_IS_DIFFERENT		 231
 #define SSL_R_SSL_SESSION_ID_TOO_LONG			 408
+#define SSL_R_TLSV13_ALERT_MISSING_EXTENSION		 1109
+#define SSL_R_TLSV13_ALERT_CERTIFICATE_REQUIRED		 1116
 #define SSL_R_TLSV1_ALERT_ACCESS_DENIED			 1049
+#define SSL_R_TLSV1_ALERT_NO_APPLICATION_PROTOCOL	 1120
 #define SSL_R_TLSV1_ALERT_DECODE_ERROR			 1050
 #define SSL_R_TLSV1_ALERT_DECRYPTION_FAILED		 1021
 #define SSL_R_TLSV1_ALERT_DECRYPT_ERROR			 1051
@@ -2251,6 +2252,7 @@ void ERR_load_SSL_strings(void);
 #define SSL_R_TLSV1_ALERT_PROTOCOL_VERSION		 1070
 #define SSL_R_TLSV1_ALERT_RECORD_OVERFLOW		 1022
 #define SSL_R_TLSV1_ALERT_UNKNOWN_CA			 1048
+#define SSL_R_TLSV1_ALERT_UNKNOWN_PSK_IDENTITY		 1115
 #define SSL_R_TLSV1_ALERT_USER_CANCELLED		 1090
 #define SSL_R_TLSV1_BAD_CERTIFICATE_HASH_VALUE		 1114
 #define SSL_R_TLSV1_BAD_CERTIFICATE_STATUS_RESPONSE	 1113
@@ -2264,7 +2266,6 @@ void ERR_load_SSL_strings(void);
 #define SSL_R_TLS_INVALID_ECPOINTFORMAT_LIST		 157
 #define SSL_R_TLS_PEER_DID_NOT_RESPOND_WITH_CERTIFICATE_LIST 233
 #define SSL_R_TLS_RSA_ENCRYPTED_VALUE_LENGTH_IS_WRONG	 234
-#define SSL_R_TRIED_TO_USE_UNSUPPORTED_CIPHER		 235
 #define SSL_R_UNABLE_TO_DECODE_DH_CERTS			 236
 #define SSL_R_UNABLE_TO_DECODE_ECDH_CERTS		 313
 #define SSL_R_UNABLE_TO_EXTRACT_PUBLIC_KEY		 237

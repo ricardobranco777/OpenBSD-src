@@ -1,4 +1,4 @@
-/* $OpenBSD: trap.c,v 1.49 2024/07/24 21:24:18 kettenis Exp $ */
+/* $OpenBSD: trap.c,v 1.52 2025/03/01 07:42:09 miod Exp $ */
 /*-
  * Copyright (c) 2014 Andrew Turner
  * All rights reserved.
@@ -36,7 +36,6 @@
 #include <sys/signalvar.h>
 #include <sys/user.h>
 
-#include <uvm/uvm.h>
 #include <uvm/uvm_extern.h>
 
 #include <machine/cpu.h>
@@ -292,6 +291,7 @@ do_el1h_sync(struct trapframe *frame)
 	far = READ_SPECIALREG(far_el1);
 
 	intr_enable();
+	uvmexp.traps++;
 
 	/*
 	 * Sanity check we are in an exception er can handle. The IL bit
@@ -362,6 +362,7 @@ do_el0_sync(struct trapframe *frame)
 	far = READ_SPECIALREG(far_el1);
 
 	intr_enable();
+	uvmexp.traps++;
 
 	p->p_addr->u_pcb.pcb_tf = frame;
 	refreshcreds(p);
@@ -371,6 +372,9 @@ do_el0_sync(struct trapframe *frame)
 		curcpu()->ci_flush_bp();
 		sv.sival_ptr = (void *)frame->tf_elr;
 		trapsignal(p, SIGILL, esr, ILL_ILLOPC, sv);
+		break;
+	case EXCP_SVE:
+		sve_load(p);
 		break;
 	case EXCP_FP_SIMD:
 	case EXCP_TRAP_FP:

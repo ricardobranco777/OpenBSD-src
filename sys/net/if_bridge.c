@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_bridge.c,v 1.372 2024/09/01 03:09:00 jsg Exp $	*/
+/*	$OpenBSD: if_bridge.c,v 1.374 2025/03/02 21:28:31 bluhm Exp $	*/
 
 /*
  * Copyright (c) 1999, 2000 Jason L. Wright (jason@thought.net)
@@ -111,7 +111,8 @@ void	bridge_spandetach(void *);
 int	bridge_ifremove(struct bridge_iflist *);
 void	bridge_spanremove(struct bridge_iflist *);
 struct mbuf *
-	bridge_input(struct ifnet *, struct mbuf *, uint64_t, void *);
+	bridge_input(struct ifnet *, struct mbuf *, uint64_t, void *,
+	    struct netstack *);
 void	bridge_process(struct ifnet *, struct mbuf *);
 void	bridgeintr_frame(struct ifnet *, struct ifnet *, struct mbuf *);
 void	bridge_bifgetstp(struct bridge_softc *, struct bridge_iflist *,
@@ -1138,7 +1139,8 @@ bridge_ourether(struct ifnet *ifp, uint8_t *ena)
  * not for us, and schedule an interrupt.
  */
 struct mbuf *
-bridge_input(struct ifnet *ifp, struct mbuf *m, uint64_t dst, void *null)
+bridge_input(struct ifnet *ifp, struct mbuf *m, uint64_t dst, void *null,
+    struct netstack *ns)
 {
 	KASSERT(m->m_flags & M_PKTHDR);
 
@@ -1597,10 +1599,10 @@ bridge_ipsec(struct ifnet *ifp, struct ether_header *eh, int hassnap,
 			}
 
 			prot = (*(tdb->tdb_xform->xf_input))(&m, tdb, hlen,
-			    off);
+			    off, NULL);
 			tdb_unref(tdb);
 			if (prot != IPPROTO_DONE)
-				ip_deliver(&m, &hlen, prot, af, 0);
+				ip_deliver(&m, &hlen, prot, af, 0, NULL);
 			return (1);
 		} else {
 			tdb_unref(tdb);
@@ -1646,7 +1648,8 @@ bridge_ipsec(struct ifnet *ifp, struct ether_header *eh, int hassnap,
 				    ICMP_UNREACH, ICMP_UNREACH_NEEDFRAG);
 			} else {
 				KERNEL_LOCK();
-				error = ipsp_process_packet(m, tdb, af, 0);
+				error = ipsp_process_packet(m, tdb, af, 0,
+				    IPSP_DF_INHERIT);
 				KERNEL_UNLOCK();
 			}
 			tdb_unref(tdb);
@@ -1745,7 +1748,7 @@ bridge_ip(struct ifnet *brifp, int dir, struct ifnet *ifp,
 			m_resethdr(m);
 			m->m_pkthdr.ph_ifidx = ifp->if_index;
 			m->m_pkthdr.ph_rtableid = ifp->if_rdomain;
-			ipv4_input(ifp, m);
+			ipv4_input(ifp, m, NULL);
 			return (NULL);
 		}
 #endif /* NPF > 0 */
@@ -1781,7 +1784,7 @@ bridge_ip(struct ifnet *brifp, int dir, struct ifnet *ifp,
 			m_resethdr(m);
 			m->m_pkthdr.ph_ifidx = ifp->if_index;
 			m->m_pkthdr.ph_rtableid = ifp->if_rdomain;
-			ipv6_input(ifp, m);
+			ipv6_input(ifp, m, NULL);
 			return (NULL);
 		}
 #endif /* NPF > 0 */

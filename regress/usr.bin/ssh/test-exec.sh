@@ -1,4 +1,4 @@
-#	$OpenBSD: test-exec.sh,v 1.119 2024/06/20 08:18:34 dtucker Exp $
+#	$OpenBSD: test-exec.sh,v 1.127 2025/03/28 05:41:15 dtucker Exp $
 #	Placed in the Public Domain.
 
 #SUDO=sudo
@@ -53,6 +53,7 @@ SSHKEYSCAN=ssh-keyscan
 SFTP=sftp
 SFTPSERVER=/usr/libexec/sftp-server
 SSHD_SESSION=/usr/libexec/sshd-session
+SSHD_AUTH=/usr/libexec/sshd-auth
 SCP=scp
 
 # Interop testing
@@ -76,6 +77,9 @@ if [ "x$TEST_SSH_SSH" != "x" ]; then
 fi
 if [ "x$TEST_SSH_SSHD_SESSION" != "x" ]; then
 	SSHD_SESSION="${TEST_SSH_SSHD_SESSION}"
+fi
+if [ "x$TEST_SSH_SSHD_AUTH" != "x" ]; then
+	SSHD_AUTH="${TEST_SSH_SSHD_AUTH}"
 fi
 if [ "x$TEST_SSH_SSHD" != "x" ]; then
 	SSHD="${TEST_SSH_SSHD}"
@@ -136,6 +140,11 @@ fi
 case "$SSHD" in
 /*) ;;
 *) SSHD=`which $SSHD` ;;
+esac
+
+case "$SSH" in
+/*) ;;
+*) SSH=`which $SSH` ;;
 esac
 
 case "$SSHAGENT" in
@@ -200,6 +209,7 @@ fi
 # to preserve our debug logging.  In the rare instance where -q is desirable
 # -qq is equivalent and is not removed.
 SSHLOGWRAP=$OBJ/ssh-log-wrapper.sh
+rm -f ${SSHLOGWRAP}
 cat >$SSHLOGWRAP <<EOD
 #!/bin/sh
 timestamp="\`$OBJ/timestamp\`"
@@ -218,6 +228,7 @@ REAL_SSHD="$SSHD"
 SSH="$SSHLOGWRAP"
 
 SSHDLOGWRAP=$OBJ/sshd-log-wrapper.sh
+rm -f ${SSHDLOGWRAP}
 cat >$SSHDLOGWRAP <<EOD
 #!/bin/sh
 timestamp="\`$OBJ/timestamp\`"
@@ -247,14 +258,14 @@ ssh_logfile ()
 # [kbytes] to ensure the file is at least that large.
 DATANAME=data
 DATA=$OBJ/${DATANAME}
-cat ${SSH} >${DATA}
+cat ${REAL_SSH} >${DATA}
 COPY=$OBJ/copy
 rm -f ${COPY}
 
 increase_datafile_size()
 {
 	while [ `du -k ${DATA} | cut -f1` -lt $1 ]; do
-		cat ${SSH} >>${DATA}
+		cat ${REAL_SSH} >>${DATA}
 	done
 }
 
@@ -326,7 +337,7 @@ save_debug_log ()
 
 	for logfile in $TEST_SSH_LOGDIR $TEST_REGRESS_LOGFILE \
 	    $TEST_SSH_LOGFILE $TEST_SSHD_LOGFILE; do
-		if [ ! -z "$SUDO" ] && [ -f "$logfile" ]; then
+		if [ ! -z "$SUDO" ] && [ -e "$logfile" ]; then
 			$SUDO chown -R $USER $logfile
 		fi
 	done
@@ -426,6 +437,7 @@ cat << EOF > $OBJ/sshd_config
 	AcceptEnv		_XXX_TEST
 	Subsystem	sftp	$SFTPSERVER
 	SshdSessionPath		$SSHD_SESSION
+	SshdAuthPath		$SSHD_AUTH
 	PerSourcePenalties	no
 EOF
 
@@ -646,7 +658,8 @@ esac
 
 if test "$REGRESS_INTEROP_DROPBEAR" = "yes" ; then
 	trace Create dropbear keys and add to authorized_keys
-	mkdir -p $OBJ/.dropbear
+	mkdir -p $OBJ/.dropbear $OBJ/.ssh
+	awk '{print "somehost "$2" "$3}' $OBJ/known_hosts >$OBJ/.ssh/known_hosts
 	kt="ed25519"
 	for i in dss rsa ecdsa; do
 		if $SSH -Q key-plain | grep "$i" >/dev/null; then
@@ -672,7 +685,7 @@ fi
 # create a proxy version of the client config
 (
 	cat $OBJ/ssh_config
-	echo proxycommand ${SUDO} env SSH_SK_HELPER=\"$SSH_SK_HELPER\" ${OBJ}/sshd-log-wrapper.sh -i -f $OBJ/sshd_proxy
+	echo proxycommand ${SUDO} env SSH_SK_HELPER=\"$SSH_SK_HELPER\" ${TEST_SSH_SSHD_ENV} ${OBJ}/sshd-log-wrapper.sh -i -f $OBJ/sshd_proxy
 ) > $OBJ/ssh_proxy
 
 # check proxy config
@@ -689,8 +702,9 @@ start_sshd ()
 	PIDFILE=$OBJ/pidfile
 	# start sshd
 	logfile="${TEST_SSH_LOGDIR}/sshd.`$OBJ/timestamp`.$$.log"
-	$SUDO ${SSHD} -f $OBJ/sshd_config "$@" -t || fatal "sshd_config broken"
-	$SUDO env SSH_SK_HELPER="$SSH_SK_HELPER" \
+	$SUDO env SSH_SK_HELPER="$SSH_SK_HELPER" ${TEST_SSH_SSHD_ENV} \
+	    ${SSHD} -f $OBJ/sshd_config "$@" -t || fatal "sshd_config broken"
+	$SUDO env SSH_SK_HELPER="$SSH_SK_HELPER" ${TEST_SSH_SSHD_ENV} \
 	    ${SSHD} -f $OBJ/sshd_config "$@" -E$logfile
 	echo "trace: Started sshd as daemon, logfile $logfile" >>$TEST_REGRESS_LOGFILE
 
@@ -700,6 +714,7 @@ start_sshd ()
 		i=`expr $i + 1`
 		sleep $i
 	done
+	rm -f ${TEST_SSHD_LOGFILE}
 	ln -f -s ${logfile} $TEST_SSHD_LOGFILE
 
 	test -f $PIDFILE || fatal "no sshd running on port $PORT"

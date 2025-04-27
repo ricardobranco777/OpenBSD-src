@@ -1,4 +1,4 @@
-/*	$OpenBSD: trap.c,v 1.172 2024/09/20 02:00:46 jsg Exp $	*/
+/*	$OpenBSD: trap.c,v 1.174 2024/11/07 16:02:29 miod Exp $	*/
 
 /*
  * Copyright (c) 1988 University of Utah.
@@ -645,8 +645,8 @@ fault_common_no_miss:
 			sigexit(p, SIGABRT);
 			/* NOTREACHED */
 		} else {
-			signal = SIGEMT; /* Stuff it with something for now */
-			sicode = 0;
+			signal = SIGTRAP;
+			sicode = TRAP_BRKPT;
 		}
 		break;
 	    }
@@ -1128,7 +1128,7 @@ stacktrace_subr(struct trapframe *regs, int count,
 #ifdef DDB
 	db_expr_t diff;
 	Elf_Sym *sym;
-	char *symname;
+	const char *symname;
 #endif
 
 	/* get initial values from the exception frame */

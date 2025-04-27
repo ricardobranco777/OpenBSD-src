@@ -1,4 +1,4 @@
-# $OpenBSD: RAMDISK,v 1.219 2024/08/14 14:40:46 patrick Exp $
+# $OpenBSD: RAMDISK,v 1.223 2025/04/21 21:11:04 mglocker Exp $
 
 machine		arm64
 maxusers	4
@@ -204,6 +204,12 @@ hiclock*	at fdt? early 1
 hidwusb*	at fdt?
 hireset*	at fdt? early 1
 
+# MediaTek SoCs
+mtintc*		at fdt?
+mtrng*		at fdt?
+mtxhci*		at fdt?
+usb*		at mtxhci?
+
 # Marvell SoCs
 mvclock*	at fdt? early 1
 mvgicp*		at fdt? early 1
@@ -262,6 +268,7 @@ qcipcc*		at fdt?
 qcmtx*		at fdt? early 1
 qcpas*		at fdt?
 qcpdc*		at fdt?
+qcscm*		at acpi?
 qcscm*		at fdt?
 qcsmem*		at fdt?
 qcsmptp*	at fdt?

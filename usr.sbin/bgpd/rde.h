@@ -1,4 +1,4 @@
-/*	$OpenBSD: rde.h,v 1.306 2024/09/25 14:46:51 claudio Exp $ */
+/*	$OpenBSD: rde.h,v 1.314 2025/02/20 19:47:31 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Claudio Jeker <claudio@openbsd.org> and
@@ -89,7 +89,7 @@ struct rde_peer {
 	struct prefix_tree		 updates[AID_MAX];
 	struct prefix_tree		 withdraws[AID_MAX];
 	struct filter_head		*out_rules;
-	time_t				 staletime[AID_MAX];
+	monotime_t			 staletime[AID_MAX];
 	uint32_t			 remote_bgpid;
 	uint32_t			 path_id_tx;
 	unsigned int			 local_if_scope;
@@ -143,6 +143,7 @@ enum attrtypes {
 	ATTR_EXT_COMMUNITIES=16,
 	ATTR_AS4_PATH=17,
 	ATTR_AS4_AGGREGATOR=18,
+	ATTR_PMSI_TUNNEL=22,
 	ATTR_LARGE_COMMUNITIES=32,
 	ATTR_OTC=35,
 	ATTR_FIRST_UNKNOWN,	/* after this all attributes are unknown */
@@ -157,7 +158,7 @@ enum attrtypes {
 /* by default mask the reserved bits and the ext len bit */
 #define ATTR_DEFMASK		(ATTR_RESERVED | ATTR_EXTLEN)
 
-/* default attribute flags for well known attributes */
+/* default attribute flags for well-known attributes */
 #define ATTR_WELL_KNOWN		ATTR_TRANSITIVE
 
 struct attr {
@@ -278,7 +279,7 @@ struct prefix {
 	struct rde_community		*communities;
 	struct rde_peer			*peer;
 	struct nexthop			*nexthop;	/* may be NULL */
-	time_t				 lastchange;
+	monotime_t			 lastchange;
 	uint32_t			 path_id;
 	uint32_t			 path_id_tx;
 	uint16_t			 flags;
@@ -289,7 +290,7 @@ struct prefix {
 #define	PREFIX_FLAG_WITHDRAW	0x0001	/* enqueued on withdraw queue */
 #define	PREFIX_FLAG_UPDATE	0x0002	/* enqueued on update queue */
 #define	PREFIX_FLAG_DEAD	0x0004	/* locked but removed */
-#define	PREFIX_FLAG_STALE	0x0008	/* stale entry (graceful reload) */
+#define	PREFIX_FLAG_STALE	0x0008	/* stale entry (for addpath) */
 #define	PREFIX_FLAG_MASK	0x000f	/* mask for the prefix types */
 #define	PREFIX_FLAG_ADJOUT	0x0010	/* prefix is in the adj-out rib */
 #define	PREFIX_FLAG_EOR		0x0020	/* prefix is EoR */
@@ -354,7 +355,9 @@ int		rde_match_peer(struct rde_peer *, struct ctl_neighbor *);
 /* rde_peer.c */
 int		 peer_has_as4byte(struct rde_peer *);
 int		 peer_has_add_path(struct rde_peer *, uint8_t, int);
-int		 peer_accept_no_as_set(struct rde_peer *);
+int		 peer_has_ext_msg(struct rde_peer *);
+int		 peer_has_ext_nexthop(struct rde_peer *, uint8_t);
+int		 peer_permit_as_set(struct rde_peer *);
 void		 peer_init(struct filter_head *);
 void		 peer_shutdown(void);
 void		 peer_foreach(void (*)(struct rde_peer *, void *), void *);
@@ -368,15 +371,18 @@ void		 rde_generate_updates(struct rib_entry *, struct prefix *,
 		    struct prefix *, enum eval_mode);
 
 void		 peer_up(struct rde_peer *, struct session_up *);
-void		 peer_down(struct rde_peer *, void *);
-void		 peer_flush(struct rde_peer *, uint8_t, time_t);
+void		 peer_down(struct rde_peer *);
+void		 peer_delete(struct rde_peer *);
+void		 peer_flush(struct rde_peer *, uint8_t, monotime_t);
 void		 peer_stale(struct rde_peer *, uint8_t, int);
+void		 peer_blast(struct rde_peer *, uint8_t);
 void		 peer_dump(struct rde_peer *, uint8_t);
 void		 peer_begin_rrefresh(struct rde_peer *, uint8_t);
+int		 peer_work_pending(void);
+void		 peer_reaper(struct rde_peer *);
 
 void		 peer_imsg_push(struct rde_peer *, struct imsg *);
 int		 peer_imsg_pop(struct rde_peer *, struct imsg *);
-int		 peer_imsg_pending(void);
 void		 peer_imsg_flush(struct rde_peer *);
 
 static inline int
@@ -601,6 +607,8 @@ void		 prefix_adjout_update(struct prefix *, struct rde_peer *,
 		    struct filterstate *, struct pt_entry *, uint32_t);
 void		 prefix_adjout_withdraw(struct prefix *);
 void		 prefix_adjout_destroy(struct prefix *);
+void		 prefix_adjout_flush_pending(struct rde_peer *);
+int		 prefix_adjout_reaper(struct rde_peer *);
 int		 prefix_dump_new(struct rde_peer *, uint8_t, unsigned int,
 		    void *, void (*)(struct prefix *, void *),
 		    void (*)(void *, uint8_t), int (*)(void *));

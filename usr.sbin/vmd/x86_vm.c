@@ -1,4 +1,4 @@
-/*	$OpenBSD: x86_vm.c,v 1.3 2024/09/11 15:42:52 bluhm Exp $	*/
+/*	$OpenBSD: x86_vm.c,v 1.5 2024/10/02 17:05:56 dv Exp $	*/
 /*
  * Copyright (c) 2015 Mike Larkin <mlarkin@openbsd.org>
  *
@@ -21,7 +21,6 @@
 #include <dev/ic/i8253reg.h>
 #include <dev/isa/isareg.h>
 
-#include <machine/psl.h>
 #include <machine/pte.h>
 #include <machine/specialreg.h>
 #include <machine/vmmvar.h>
@@ -193,7 +192,7 @@ create_memory_map(struct vm_create_params *vcp)
 
 	/* If we have less than 2MB remaining, still create a 2nd BIOS area. */
 	if (mem_bytes <= MB(2)) {
-		vcp->vcp_memranges[2].vmr_gpa = VMM_PCI_MMIO_BAR_END;
+		vcp->vcp_memranges[2].vmr_gpa = PCI_MMIO_BAR_END;
 		vcp->vcp_memranges[2].vmr_size = MB(2);
 		vcp->vcp_memranges[2].vmr_type = VM_MEM_RESERVED;
 		vcp->vcp_nmemranges = 3;
@@ -205,8 +204,8 @@ create_memory_map(struct vm_create_params *vcp)
 	 * boundary while making sure we do not place physical memory into
 	 * MMIO ranges.
 	 */
-	if (mem_bytes > VMM_PCI_MMIO_BAR_BASE - MB(1)) {
-		above_1m = VMM_PCI_MMIO_BAR_BASE - MB(1);
+	if (mem_bytes > PCI_MMIO_BAR_BASE - MB(1)) {
+		above_1m = PCI_MMIO_BAR_BASE - MB(1);
 		above_4g = mem_bytes - above_1m;
 	} else {
 		above_1m = mem_bytes;
@@ -219,13 +218,13 @@ create_memory_map(struct vm_create_params *vcp)
 	vcp->vcp_memranges[2].vmr_type = VM_MEM_RAM;
 
 	/* Fourth region: PCI MMIO range */
-	vcp->vcp_memranges[3].vmr_gpa = VMM_PCI_MMIO_BAR_BASE;
-	vcp->vcp_memranges[3].vmr_size = VMM_PCI_MMIO_BAR_END -
-	    VMM_PCI_MMIO_BAR_BASE + 1;
+	vcp->vcp_memranges[3].vmr_gpa = PCI_MMIO_BAR_BASE;
+	vcp->vcp_memranges[3].vmr_size = PCI_MMIO_BAR_END -
+	    PCI_MMIO_BAR_BASE + 1;
 	vcp->vcp_memranges[3].vmr_type = VM_MEM_MMIO;
 
 	/* Fifth region: 2nd copy of BIOS above MMIO ending at 4GB */
-	vcp->vcp_memranges[4].vmr_gpa = VMM_PCI_MMIO_BAR_END + 1;
+	vcp->vcp_memranges[4].vmr_gpa = PCI_MMIO_BAR_END + 1;
 	vcp->vcp_memranges[4].vmr_size = MB(2);
 	vcp->vcp_memranges[4].vmr_type = VM_MEM_RESERVED;
 

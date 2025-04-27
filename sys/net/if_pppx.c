@@ -1,4 +1,4 @@
-/*	$OpenBSD: if_pppx.c,v 1.131 2024/09/20 02:00:46 jsg Exp $ */
+/*	$OpenBSD: if_pppx.c,v 1.134 2025/03/02 21:28:32 bluhm Exp $ */
 
 /*
  * Copyright (c) 2010 Claudio Jeker <claudio@openbsd.org>
@@ -401,11 +401,11 @@ pppxwrite(dev_t dev, struct uio *uio, int ioflag)
 
 	switch (proto) {
 	case AF_INET:
-		ipv4_input(&pxi->pxi_if, top);
+		ipv4_input(&pxi->pxi_if, top, NULL);
 		break;
 #ifdef INET6
 	case AF_INET6:
-		ipv6_input(&pxi->pxi_if, top);
+		ipv6_input(&pxi->pxi_if, top, NULL);
 		break;
 #endif
 	default:
@@ -443,8 +443,6 @@ pppxioctl(dev_t dev, u_long cmd, caddr_t addr, int flags, struct proc *p)
 		    (struct pipex_session_descr_req *)addr);
 		break;
 
-	case FIONBIO:
-		break;
 	case FIONREAD:
 		*(int *)addr = mq_hdatalen(&pxd->pxd_svcq);
 		break;
@@ -562,7 +560,7 @@ pppxclose(dev_t dev, int flags, int mode, struct proc *p)
 	mq_purge(&pxd->pxd_svcq);
 
 	klist_free(&pxd->pxd_rklist);
-	klist_free(&pxd->pxd_rklist);
+	klist_free(&pxd->pxd_wklist);
 
 	free(pxd, M_DEVBUF, sizeof(*pxd));
 
@@ -1195,11 +1193,11 @@ pppacwrite(dev_t dev, struct uio *uio, int ioflag)
 
 	switch (proto) {
 	case AF_INET:
-		ipv4_input(ifp, m);
+		ipv4_input(ifp, m, NULL);
 		break;
 #ifdef INET6
 	case AF_INET6:
-		ipv6_input(ifp, m);
+		ipv6_input(ifp, m, NULL);
 		break;
 #endif
 	default:
@@ -1220,8 +1218,6 @@ pppacioctl(dev_t dev, u_long cmd, caddr_t data, int flags, struct proc *p)
 	int error = 0;
 
 	switch (cmd) {
-	case FIONBIO:
-		break;
 	case FIONREAD:
 		*(int *)data = mq_hdatalen(&sc->sc_mq);
 		break;

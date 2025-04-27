@@ -1,4 +1,4 @@
-/*	$OpenBSD: rde.c,v 1.634 2024/09/25 14:46:51 claudio Exp $ */
+/*	$OpenBSD: rde.c,v 1.654 2025/02/27 14:03:32 claudio Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -201,7 +201,10 @@ rde_main(int debug, int verbose)
 
 	if ((ibuf_main = malloc(sizeof(struct imsgbuf))) == NULL)
 		fatal(NULL);
-	imsg_init(ibuf_main, 3);
+	if (imsgbuf_init(ibuf_main, 3) == -1 ||
+	    imsgbuf_set_maxsize(ibuf_main, MAX_BGPD_IMSGSIZE) == -1)
+		fatal(NULL);
+	imsgbuf_allow_fdpass(ibuf_main);
 
 	/* initialize the RIB structures */
 	if ((out_rules = calloc(1, sizeof(struct filter_head))) == NULL)
@@ -240,24 +243,23 @@ rde_main(int debug, int verbose)
 		set_pollfd(&pfd[PFD_PIPE_ROA], ibuf_rtr);
 
 		i = PFD_PIPE_COUNT;
-		for (mctx = LIST_FIRST(&rde_mrts); mctx != 0; mctx = xmctx) {
-			xmctx = LIST_NEXT(mctx, entry);
 
+		LIST_FOREACH_SAFE(mctx, &rde_mrts, entry, xmctx) {
 			if (i >= pfd_elms)
 				fatalx("poll pfd too small");
-			if (msgbuf_queuelen(&mctx->mrt.wbuf) > 0) {
-				pfd[i].fd = mctx->mrt.wbuf.fd;
+			if (msgbuf_queuelen(mctx->mrt.wbuf) > 0) {
+				pfd[i].fd = mctx->mrt.fd;
 				pfd[i].events = POLLOUT;
 				i++;
 			} else if (mctx->mrt.state == MRT_STATE_REMOVE) {
-				close(mctx->mrt.wbuf.fd);
+				mrt_clean(&mctx->mrt);
 				LIST_REMOVE(mctx, entry);
 				free(mctx);
 				rde_mrt_cnt--;
 			}
 		}
 
-		if (peer_imsg_pending() || rde_update_queue_pending() ||
+		if (peer_work_pending() || rde_update_queue_pending() ||
 		    nexthop_pending() || rib_dump_pending())
 			timeout = 0;
 
@@ -274,7 +276,7 @@ rde_main(int debug, int verbose)
 
 		if (handle_pollfd(&pfd[PFD_PIPE_SESSION], ibuf_se) == -1) {
 			log_warnx("RDE: Lost connection to SE");
-			msgbuf_clear(&ibuf_se->w);
+			imsgbuf_clear(ibuf_se);
 			free(ibuf_se);
 			ibuf_se = NULL;
 		} else
@@ -283,7 +285,7 @@ rde_main(int debug, int verbose)
 		if (handle_pollfd(&pfd[PFD_PIPE_SESSION_CTL], ibuf_se_ctl) ==
 		    -1) {
 			log_warnx("RDE: Lost connection to SE control");
-			msgbuf_clear(&ibuf_se_ctl->w);
+			imsgbuf_clear(ibuf_se_ctl);
 			free(ibuf_se_ctl);
 			ibuf_se_ctl = NULL;
 		} else
@@ -291,24 +293,25 @@ rde_main(int debug, int verbose)
 
 		if (handle_pollfd(&pfd[PFD_PIPE_ROA], ibuf_rtr) == -1) {
 			log_warnx("RDE: Lost connection to ROA");
-			msgbuf_clear(&ibuf_rtr->w);
+			imsgbuf_clear(ibuf_rtr);
 			free(ibuf_rtr);
 			ibuf_rtr = NULL;
 		} else
 			rde_dispatch_imsg_rtr(ibuf_rtr);
 
 		for (j = PFD_PIPE_COUNT, mctx = LIST_FIRST(&rde_mrts);
-		    j < i && mctx != 0; j++) {
-			if (pfd[j].fd == mctx->mrt.wbuf.fd &&
+		    j < i && mctx != NULL; j++) {
+			if (pfd[j].fd == mctx->mrt.fd &&
 			    pfd[j].revents & POLLOUT)
 				mrt_write(&mctx->mrt);
 			mctx = LIST_NEXT(mctx, entry);
 		}
 
 		peer_foreach(rde_dispatch_imsg_peer, NULL);
+		peer_reaper(NULL);
 		rib_dump_runner();
 		nexthop_runner();
-		if (ibuf_se && ibuf_se->w.queued < SESS_MSG_HIGH_MARK) {
+		if (ibuf_se && imsgbuf_queuelen(ibuf_se) < SESS_MSG_HIGH_MARK) {
 			for (aid = AID_MIN; aid < AID_MAX; aid++)
 				rde_update_queue_runner(aid);
 		}
@@ -325,27 +328,26 @@ rde_main(int debug, int verbose)
 
 	/* close pipes */
 	if (ibuf_se) {
-		msgbuf_clear(&ibuf_se->w);
+		imsgbuf_clear(ibuf_se);
 		close(ibuf_se->fd);
 		free(ibuf_se);
 	}
 	if (ibuf_se_ctl) {
-		msgbuf_clear(&ibuf_se_ctl->w);
+		imsgbuf_clear(ibuf_se_ctl);
 		close(ibuf_se_ctl->fd);
 		free(ibuf_se_ctl);
 	}
 	if (ibuf_rtr) {
-		msgbuf_clear(&ibuf_rtr->w);
+		imsgbuf_clear(ibuf_rtr);
 		close(ibuf_rtr->fd);
 		free(ibuf_rtr);
 	}
-	msgbuf_clear(&ibuf_main->w);
+	imsgbuf_clear(ibuf_main);
 	close(ibuf_main->fd);
 	free(ibuf_main);
 
 	while ((mctx = LIST_FIRST(&rde_mrts)) != NULL) {
-		msgbuf_clear(&mctx->mrt.wbuf);
-		close(mctx->mrt.wbuf.fd);
+		mrt_clean(&mctx->mrt);
 		LIST_REMOVE(mctx, entry);
 		free(mctx);
 	}
@@ -428,7 +430,13 @@ rde_dispatch_imsg_session(struct imsgbuf *imsgbuf)
 				    "IMSG_SESSION_DOWN", peerid);
 				break;
 			}
-			peer_down(peer, NULL);
+			peer_down(peer);
+			break;
+		case IMSG_SESSION_DELETE:
+			/* silently ignore deletes for unknown peers */
+			if ((peer = peer_get(peerid)) == NULL)
+				break;
+			peer_delete(peer);
 			break;
 		case IMSG_SESSION_STALE:
 		case IMSG_SESSION_NOGRACE:
@@ -459,7 +467,7 @@ rde_dispatch_imsg_session(struct imsgbuf *imsgbuf)
 				peer_flush(peer, aid, peer->staletime[aid]);
 				break;
 			case IMSG_SESSION_RESTARTED:
-				if (peer->staletime[aid])
+				if (monotime_valid(peer->staletime[aid]))
 					peer_flush(peer, aid,
 					    peer->staletime[aid]);
 				break;
@@ -843,13 +851,15 @@ rde_dispatch_imsg_parent(struct imsgbuf *imsgbuf)
 			}
 			if ((i = malloc(sizeof(struct imsgbuf))) == NULL)
 				fatal(NULL);
-			imsg_init(i, fd);
+			if (imsgbuf_init(i, fd) == -1 ||
+			    imsgbuf_set_maxsize(i, MAX_BGPD_IMSGSIZE) == -1)
+				fatal(NULL);
 			switch (imsg_get_type(&imsg)) {
 			case IMSG_SOCKET_CONN:
 				if (ibuf_se) {
 					log_warnx("Unexpected imsg connection "
 					    "to SE received");
-					msgbuf_clear(&ibuf_se->w);
+					imsgbuf_clear(ibuf_se);
 					free(ibuf_se);
 				}
 				ibuf_se = i;
@@ -858,7 +868,7 @@ rde_dispatch_imsg_parent(struct imsgbuf *imsgbuf)
 				if (ibuf_se_ctl) {
 					log_warnx("Unexpected imsg ctl "
 					    "connection to SE received");
-					msgbuf_clear(&ibuf_se_ctl->w);
+					imsgbuf_clear(ibuf_se_ctl);
 					free(ibuf_se_ctl);
 				}
 				ibuf_se_ctl = i;
@@ -867,7 +877,7 @@ rde_dispatch_imsg_parent(struct imsgbuf *imsgbuf)
 				if (ibuf_rtr) {
 					log_warnx("Unexpected imsg ctl "
 					    "connection to ROA received");
-					msgbuf_clear(&ibuf_rtr->w);
+					imsgbuf_clear(ibuf_rtr);
 					free(ibuf_rtr);
 				}
 				ibuf_rtr = i;
@@ -1316,7 +1326,7 @@ rde_dispatch_imsg_peer(struct rde_peer *peer, void *bula)
 		peer_imsg_flush(peer);
 		return;
 	}
-		
+
 	if (!peer_imsg_pop(peer, &imsg))
 		return;
 
@@ -1345,7 +1355,7 @@ rde_dispatch_imsg_peer(struct rde_peer *peer, void *bula)
 		}
 		switch (rr.subtype) {
 		case ROUTE_REFRESH_REQUEST:
-			peer_dump(peer, rr.aid);
+			peer_blast(peer, rr.aid);
 			break;
 		case ROUTE_REFRESH_BEGIN_RR:
 			/* check if graceful restart EOR was received */
@@ -1359,7 +1369,7 @@ rde_dispatch_imsg_peer(struct rde_peer *peer, void *bula)
 			break;
 		case ROUTE_REFRESH_END_RR:
 			if ((peer->recv_eor & (1 << rr.aid)) != 0 &&
-			    peer->staletime[rr.aid])
+			    monotime_valid(peer->staletime[rr.aid]))
 				peer_flush(peer, rr.aid,
 				    peer->staletime[rr.aid]);
 			else
@@ -1549,6 +1559,12 @@ rde_update_dispatch(struct rde_peer *peer, struct ibuf *buf)
 				pathid = 0;
 
 			switch (aid) {
+			case AID_INET:
+				log_peer_warnx(&peer->conf,
+				    "bad MP withdraw for %s", aid2str(aid));
+				rde_update_err(peer, ERR_UPDATE,
+				    ERR_UPD_OPTATTR, &unreachbuf);
+				goto done;
 			case AID_INET6:
 				if (nlri_get_prefix6(&unreachbuf,
 				    &prefix, &prefixlen) == -1) {
@@ -1579,6 +1595,16 @@ rde_update_dispatch(struct rde_peer *peer, struct ibuf *buf)
 					goto done;
 				}
 				break;
+			case AID_EVPN:
+				if (nlri_get_evpn(&unreachbuf,
+				    &prefix, &prefixlen) == -1) {
+					log_peer_warnx(&peer->conf,
+					    "bad EVPN withdraw prefix");
+					rde_update_err(peer, ERR_UPDATE,
+					    ERR_UPD_OPTATTR, &unreachbuf);
+					goto done;
+				}
+				break;
 			case AID_FLOWSPECv4:
 			case AID_FLOWSPECv6:
 				/* ignore flowspec for now */
@@ -1587,7 +1613,7 @@ rde_update_dispatch(struct rde_peer *peer, struct ibuf *buf)
 				if (ibuf_skip(&unreachbuf,
 				    ibuf_size(&unreachbuf)) == -1) {
 					log_peer_warnx(&peer->conf,
-					    "bad VPNv6 withdraw prefix");
+					    "bad withdraw prefix");
 					rde_update_err(peer, ERR_UPDATE,
 					    ERR_UPD_OPTATTR, &unreachbuf);
 					goto done;
@@ -1678,7 +1704,7 @@ rde_update_dispatch(struct rde_peer *peer, struct ibuf *buf)
 			goto done;
 		}
 
-		if (aid == AID_INET6) {
+		if (aid == AID_INET6 || aid == AID_INET) {
 			/* inject open policy OTC attribute if needed */
 			if ((state.aspath.flags & F_ATTR_OTC) == 0) {
 				uint32_t tmp;
@@ -1729,6 +1755,20 @@ rde_update_dispatch(struct rde_peer *peer, struct ibuf *buf)
 				pathid = 0;
 
 			switch (aid) {
+			case AID_INET:
+				/*
+				 * rde_get_mp_nexthop already enforces that
+				 * this is only used for RFC 8950.
+				 */
+				if (nlri_get_prefix(&reachbuf,
+				    &prefix, &prefixlen) == -1) {
+					log_peer_warnx(&peer->conf,
+					    "bad IPv4 MP nlri prefix");
+					rde_update_err(peer, ERR_UPDATE,
+					    ERR_UPD_OPTATTR, &reachbuf);
+					goto done;
+				}
+				break;
 			case AID_INET6:
 				if (nlri_get_prefix6(&reachbuf,
 				    &prefix, &prefixlen) == -1) {
@@ -1759,6 +1799,16 @@ rde_update_dispatch(struct rde_peer *peer, struct ibuf *buf)
 					goto done;
 				}
 				break;
+			case AID_EVPN:
+				if (nlri_get_evpn(&reachbuf,
+				    &prefix, &prefixlen) == -1) {
+					log_peer_warnx(&peer->conf,
+					    "bad EVPN nlri prefix");
+					rde_update_err(peer, ERR_UPDATE,
+					    ERR_UPD_OPTATTR, &reachbuf);
+					goto done;
+				}
+				break;
 			case AID_FLOWSPECv4:
 			case AID_FLOWSPECv6:
 				/* ignore flowspec for now */
@@ -1767,7 +1817,7 @@ rde_update_dispatch(struct rde_peer *peer, struct ibuf *buf)
 				if (ibuf_skip(&reachbuf,
 				    ibuf_size(&reachbuf)) == -1) {
 					log_peer_warnx(&peer->conf,
-					    "bad VPNv6 withdraw prefix");
+					    "bad nlri prefix");
 					rde_update_err(peer, ERR_UPDATE,
 					    ERR_UPD_OPTATTR, &reachbuf);
 					goto done;
@@ -2004,7 +2054,7 @@ rde_attr_parse(struct ibuf *buf, struct rde_peer *peer,
 		if (a->flags & F_ATTR_ASPATH)
 			goto bad_list;
 		error = aspath_verify(&attrbuf, peer_has_as4byte(peer),
-		    peer_accept_no_as_set(peer));
+		    peer_permit_as_set(peer));
 		if (error != 0 && error != AS_ERR_SOFT) {
 			log_peer_warnx(&peer->conf, "bad ASPATH, %s",
 			    log_aspath_error(error));
@@ -2261,7 +2311,7 @@ rde_attr_parse(struct ibuf *buf, struct rde_peer *peer,
 		    ATTR_PARTIAL))
 			goto bad_flags;
 		if ((error = aspath_verify(&attrbuf, 1,
-		    peer_accept_no_as_set(peer))) != 0) {
+		    peer_permit_as_set(peer))) != 0) {
 			/* As per RFC6793 use "attribute discard" here. */
 			log_peer_warnx(&peer->conf, "bad AS4_PATH, "
 			    "attribute discarded");
@@ -2400,8 +2450,19 @@ rde_get_mp_nexthop(struct ibuf *buf, uint8_t aid,
 	if (ibuf_skip(buf, 1) == -1)
 		return (-1);
 
+	if (aid == AID_INET && peer_has_ext_nexthop(peer, AID_INET) &&
+	    (nhlen == 16 || nhlen == 32))
+		aid = AID_INET6;
+	if (aid == AID_VPN_IPv4 && peer_has_ext_nexthop(peer, AID_VPN_IPv4) &&
+	    (nhlen == 24 || nhlen == 48))
+		aid = AID_VPN_IPv6;
+
 	memset(&nexthop, 0, sizeof(nexthop));
 	switch (aid) {
+	case AID_INET:
+		log_peer_warnx(&peer->conf, "bad multiprotocol nexthop, "
+		    "IPv4 unexpected");
+		return (-1);
 	case AID_INET6:
 		/*
 		 * RFC2545 describes that there may be a link-local
@@ -2455,7 +2516,7 @@ rde_get_mp_nexthop(struct ibuf *buf, uint8_t aid,
 		nexthop.aid = AID_INET;
 		break;
 	case AID_VPN_IPv6:
-		if (nhlen != 24) {
+		if (nhlen != 24 && nhlen != 48) {
 			log_peer_warnx(&peer->conf, "bad %s nexthop, "
 			    "bad size %d", aid2str(aid), nhlen);
 			return (-1);
@@ -2473,6 +2534,36 @@ rde_get_mp_nexthop(struct ibuf *buf, uint8_t aid,
 				    log_addr(&nexthop));
 				return (-1);
 			}
+		}
+		break;
+	case AID_EVPN:
+		switch (nhlen) {
+		case 4:
+			if (ibuf_get_h32(&nhbuf, &nexthop.v4.s_addr) == -1)
+				return (-1);
+			nexthop.aid = AID_INET;
+			break;
+		case 16:
+		case 32:
+			if (ibuf_get(&nhbuf, &nexthop.v6,
+			    sizeof(nexthop.v6)) == -1)
+				return (-1);
+			nexthop.aid = AID_INET6;
+			if (IN6_IS_ADDR_LINKLOCAL(&nexthop.v6)) {
+				if (peer->local_if_scope != 0) {
+					nexthop.scope_id = peer->local_if_scope;
+				} else {
+					log_peer_warnx(&peer->conf,
+					    "unexpected link-local nexthop: %s",
+					    log_addr(&nexthop));
+					return (-1);
+				}
+			}
+			break;
+		default:
+			log_peer_warnx(&peer->conf, "bad %s nexthop, "
+			    "bad size %d", aid2str(aid), nhlen);
+			return (-1);
 		}
 		break;
 	case AID_FLOWSPECv4:
@@ -2731,14 +2822,14 @@ rde_dump_rib_as(struct prefix *p, struct rde_aspath *asp, pid_t pid, int flags,
 	struct rib_entry	*re;
 	struct prefix		*xp;
 	struct rde_peer		*peer;
-	time_t			 staletime;
+	monotime_t		 staletime;
 	size_t			 aslen;
 	uint8_t			 l;
 
 	nexthop = prefix_nexthop(p);
 	peer = prefix_peer(p);
 	memset(&rib, 0, sizeof(rib));
-	rib.age = getmonotime() - p->lastchange;
+	rib.lastchange = p->lastchange;
 	rib.local_pref = asp->lpref;
 	rib.med = asp->med;
 	rib.weight = asp->weight;
@@ -2799,7 +2890,8 @@ rde_dump_rib_as(struct prefix *p, struct rde_aspath *asp, pid_t pid, int flags,
 	else if (asp->flags & F_ATTR_PARSE_ERR)
 		rib.flags |= F_PREF_INVALID;
 	staletime = peer->staletime[p->pt->aid];
-	if (staletime && p->lastchange <= staletime)
+	if (monotime_valid(staletime) &&
+	    monotime_cmp(p->lastchange, staletime) <= 0)
 		rib.flags |= F_PREF_STALE;
 	if (!adjout) {
 		if (peer_has_add_path(peer, p->pt->aid, CAPA_AP_RECV)) {
@@ -3009,6 +3101,9 @@ rde_dump_ctx_new(struct ctl_show_rib_request *req, pid_t pid,
 		return;
 	}
 
+	if (strcmp(req->rib, "Adj-RIB-Out") == 0)
+		req->flags |= F_CTL_ADJ_OUT;
+
 	memcpy(&ctx->req, req, sizeof(struct ctl_show_rib_request));
 	ctx->req.pid = pid;
 	ctx->req.type = type;
@@ -3193,7 +3288,7 @@ rde_mrt_throttled(void *arg)
 {
 	struct mrt	*mrt = arg;
 
-	return (msgbuf_queuelen(&mrt->wbuf) > SESS_MSG_LOW_MARK);
+	return (msgbuf_queuelen(mrt->wbuf) > SESS_MSG_LOW_MARK);
 }
 
 static void
@@ -3213,8 +3308,12 @@ rde_dump_mrt_new(struct mrt *mrt, pid_t pid, int fd)
 		return;
 	}
 	memcpy(&ctx->mrt, mrt, sizeof(struct mrt));
-	msgbuf_init(&ctx->mrt.wbuf);
-	ctx->mrt.wbuf.fd = fd;
+	if ((ctx->mrt.wbuf = msgbuf_new()) == NULL) {
+		log_warn("rde_dump_mrt_new");
+		free(ctx);
+		return;
+	}
+	ctx->mrt.fd = fd;
 	ctx->mrt.state = MRT_STATE_RUNNING;
 	rid = rib_find(ctx->mrt.rib);
 	if (rid == RIB_NOTFOUND) {
@@ -3296,6 +3395,10 @@ rde_send_kroute(struct rib *rib, struct prefix *new, struct prefix *old)
 
 	switch (kf.prefix.aid) {
 	case AID_VPN_IPv4:
+		/* XXX FIB can not handle non-IPv4 nexthop */
+		if (kf.nexthop.aid != AID_INET)
+			type = IMSG_KROUTE_DELETE;
+		/* FALLTHROUGH */
 	case AID_VPN_IPv6:
 		if (!(rib->flags & F_RIB_LOCAL))
 			/* not Loc-RIB, no update for VPNs */
@@ -3312,6 +3415,11 @@ rde_send_kroute(struct rib *rib, struct prefix *new, struct prefix *old)
 				    __LINE__);
 		}
 		break;
+	case AID_INET:
+		/* XXX FIB can not handle non-IPv4 nexthop */
+		if (kf.nexthop.aid != AID_INET)
+			type = IMSG_KROUTE_DELETE;
+		/* FALLTHROUGH */
 	default:
 		if (imsg_compose(ibuf_main, type, rib->rtableid, 0, -1,
 		    &kf, sizeof(kf)) == -1)
@@ -3336,15 +3444,13 @@ rde_up_flush_upcall(struct prefix *p, void *ptr)
 	prefix_adjout_withdraw(p);
 }
 
-u_char	queue_buf[4096];
-
 int
 rde_update_queue_pending(void)
 {
 	struct rde_peer *peer;
 	uint8_t aid;
 
-	if (ibuf_se && ibuf_se->w.queued >= SESS_MSG_HIGH_MARK)
+	if (ibuf_se && imsgbuf_queuelen(ibuf_se) >= SESS_MSG_HIGH_MARK)
 		return 0;
 
 	RB_FOREACH(peer, peer_tree, &peertable) {
@@ -4672,7 +4778,7 @@ rde_shutdown(void)
 	 */
 
 	/* First all peers go down */
-	peer_foreach(peer_down, NULL);
+	peer_shutdown();
 
 	/* free filters */
 	filterlist_free(out_rules);
@@ -4687,7 +4793,6 @@ rde_shutdown(void)
 	path_shutdown();
 	attr_shutdown();
 	pt_shutdown();
-	peer_shutdown();
 }
 
 struct rde_prefixset *

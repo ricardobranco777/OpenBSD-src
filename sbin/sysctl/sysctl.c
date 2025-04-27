@@ -1,4 +1,4 @@
-/*	$OpenBSD: sysctl.c,v 1.262 2024/09/09 05:36:17 kn Exp $	*/
+/*	$OpenBSD: sysctl.c,v 1.264 2025/04/06 17:36:22 kn Exp $	*/
 /*	$NetBSD: sysctl.c,v 1.9 1995/09/30 07:12:50 thorpej Exp $	*/
 
 /*
@@ -232,8 +232,9 @@ int
 main(int argc, char *argv[])
 {
 	int ch, lvl1;
+	const char *conffile = NULL;
 
-	while ((ch = getopt(argc, argv, "Aanqw")) != -1) {
+	while ((ch = getopt(argc, argv, "Aaf:nqw")) != -1) {
 		switch (ch) {
 
 		case 'A':
@@ -242,6 +243,10 @@ main(int argc, char *argv[])
 
 		case 'a':
 			aflag = 1;
+			break;
+
+		case 'f':
+			conffile = optarg;
 			break;
 
 		case 'n':
@@ -269,16 +274,40 @@ main(int argc, char *argv[])
 		err(1,"unveil %s", _PATH_DEVDB);
 	if (unveil("/dev", "r") == -1 && errno != ENOENT)
 		err(1, "unveil /dev");
+	if (conffile != NULL)
+		if (unveil(conffile, "r") == -1 && errno != ENOENT)
+			err(1, "unveil %s", conffile);
 	if (unveil(NULL, NULL) == -1)
 		err(1, "unveil");
 
-	if (argc == 0 || (Aflag || aflag)) {
+	if ((argc == 0 && conffile == NULL) || (Aflag || aflag)) {
 		debuginit();
 		vfsinit();
 		for (lvl1 = 1; lvl1 < CTL_MAXID; lvl1++)
 			listall(topname[lvl1].ctl_name, &secondlevel[lvl1]);
 		return (0);
 	}
+
+	if (conffile != NULL) {
+		FILE *fp;
+		char *line = NULL, *lp;
+		size_t sz = 0;
+
+		if ((fp = fopen(conffile, "r")) == NULL)
+			err(1, "fopen");
+
+		while (getline(&line, &sz, fp) != -1) {
+			lp = line + strspn(line, " \t");
+			line[strcspn(line, " \t\n#")] = '\0';
+
+			if (lp[0] != '\0')
+				parse(line, 1);
+		}
+
+		free(line);
+		fclose(fp);
+	}
+
 	for (; *argv != NULL; ++argv)
 		parse(*argv, 1);
 	return (0);
@@ -2974,6 +3003,6 @@ void
 usage(void)
 {
 	(void)fprintf(stderr,
-	    "usage: sysctl [-Aanq] [name[=value] ...]\n");
+	    "usage: sysctl [-Aanq] [-f file] [name[=value] ...]\n");
 	exit(1);
 }

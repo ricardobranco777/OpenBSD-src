@@ -197,6 +197,9 @@ static const struct pci_matchid amdgpu_devices[] = {
 	{0x1002, 0x74a0 },	/* Instinct MI300A APU */
 	{0x1002, 0x74a1 },	/* Instinct MI300X dGPU */
 
+	/* GC 9.4.4, dGPU */
+	/* GC 9.5.0, dGPU */
+
 	/* GC 10.3.1, DCN 3.0.1, APU, "Van Gogh" */
 	{0x1002, 0x1435 },	/* Custom GPU 0932 */
 	{0x1002, 0x163f },	/* Custom GPU 0405 */
@@ -215,6 +218,7 @@ static const struct pci_matchid amdgpu_devices[] = {
 
 	/* GC 11.0.0, DCN 3.2.0, dGPU, "Navi 31" */
 	{0x1002, 0x7448 },	/* Radeon Pro W7900 */
+	{0x1002, 0x7449 },	/* Radeon Pro W7800 48GB */
 	{0x1002, 0x744a },	/* Radeon Pro W7900 Dual Slot */
 	{0x1002, 0x744c },	/* Radeon RX 7900 XT/XTX/GRE, 7900M */
 	{0x1002, 0x745e },	/* Radeon Pro W7800 */
@@ -227,7 +231,7 @@ static const struct pci_matchid amdgpu_devices[] = {
 
 	/* GC 11.0.2, DCN 3.2.1, dGPU, "Navi 33" */
 	{0x1002, 0x7480 },	/* Radeon RX 7600S, 7700S, 7600M XT,
-				   7600, 7600 XT, Pro W7600 */
+				   7600, 7600 XT, Pro W7600, 7650 GRE */
 	{0x1002, 0x7483 },	/* Radeon RX 7600M */
 	{0x1002, 0x7489 },	/* Radeon Pro W7500 */
 	{0x1002, 0x7499 },	/* Radeon RX 7300, 7400, Pro W7400 */
@@ -236,21 +240,27 @@ static const struct pci_matchid amdgpu_devices[] = {
 	{0x1002, 0x7460 },	/* Radeon Pro V710 */
 	{0x1002, 0x7461 },	/* Radeon Pro V710 */
 	{0x1002, 0x7470 },	/* Radeon Pro W7700 */
-	{0x1002, 0x747e },	/* Radeon RX 7700 XT, 7800 XT */
+	{0x1002, 0x747e },	/* Radeon RX 7700 XT, 7800 XT, 7800M */
 
-	/* GC 11.0.4, DCN 3.1.4, APU, Ryzen 7040, "Phoenix" */
+	/* GC 11.0.4, DCN 3.1.4, APU, Ryzen 7040 "Phoenix" */
 	{0x1002, 0x15c8 },	/* Radeon 740M */
 
-	/* GC 11.0.4, DCN 3.1.4, APU, Ryzen 8040, "Hawk Point" */
+	/* GC 11.0.4, DCN 3.1.4, APU, Ryzen 8040 "Hawk Point" */
 	{0x1002, 0x1901 },	/* Radeon 740M */
 
-#ifdef notyet
-	/* GC 11.5.0, DCN 3.5.0, APU, Ryzen AI 300, "Strix Point", linux 6.7 */
+	/* GC 11.5.0, DCN 3.5.0, APU, Ryzen AI 300 "Strix Point" */
 	{0x1002, 0x150e },	/* Radeon 880M / 890M */
 
-	/* GC 11.5.1, DCN 3.5.1, APU, linux 6.9 */
+	/* GC 11.5.1, DCN 3.5.1, APU, Ryzen AI Max 300 "Strix Halo" */
+	{0x1002, 0x1586 },	/* Radeon 8040S / 8050S / 8060S */
 
-	/* GC 12.0.0, DCN 4.0.1, dGPU, linux 6.11 */
-	/* GC 12.0.1, DCN 4.0.1, dGPU, linux 6.11 */
-#endif
+	/* GC 11.5.2, DCN 3.5.1, APU, Ryzen AI 300 "Krackan Point" */
+	{0x1002, 0x1114 },	/* Radeon 840M / 860M */
+
+	/* GC 11.5.3, DCN 3.6.0?, APU */
+
+	/* GC 12.0.0, DCN 4.0.1, dGPU */
+
+	/* GC 12.0.1, DCN 4.0.1, dGPU, "Navi 48" */
+	{0x1002, 0x7550 },	/* Radeon RX 9070, 9070 XT */
 };

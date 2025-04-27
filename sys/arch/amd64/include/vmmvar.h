@@ -1,4 +1,4 @@
-/*	$OpenBSD: vmmvar.h,v 1.106 2024/09/21 04:36:28 mlarkin Exp $	*/
+/*	$OpenBSD: vmmvar.h,v 1.109 2024/10/22 21:50:02 jsg Exp $	*/
 /*
  * Copyright (c) 2014 Mike Larkin <mlarkin@openbsd.org>
  *
@@ -22,9 +22,6 @@
 #define _MACHINE_VMMVAR_H_
 
 #define VMM_HV_SIGNATURE 	"OpenBSDVMM58"
-
-#define VMM_PCI_MMIO_BAR_BASE	0xF0000000ULL
-#define VMM_PCI_MMIO_BAR_END	0xFFDFFFFFULL		/* 2 MiB below 4 GiB */
 
 /* VMX: Basic Exit Reasons */
 #define VMX_EXIT_NMI				0
@@ -730,20 +727,17 @@ struct vmcs {
 	uint32_t	vmcs_revision;
 };
 
-struct vmx_invvpid_descriptor
-{
+struct vmx_invvpid_descriptor {
 	uint64_t	vid_vpid;
 	uint64_t	vid_addr;
 };
 
-struct vmx_invept_descriptor
-{
+struct vmx_invept_descriptor {
 	uint64_t	vid_eptp;
 	uint64_t	vid_reserved;
 };
 
-struct vmx_msr_store
-{
+struct vmx_msr_store {
 	uint64_t	vms_index;
 	uint64_t	vms_data;
 };
@@ -755,8 +749,7 @@ struct vmx_msr_store
  * Note that vmx/svm_enter_guest depend on the layout of this struct for
  * field access.
  */
-struct vcpu_gueststate
-{
+struct vcpu_gueststate {
 	/* %rsi should be first */
 	uint64_t	vg_rsi;			/* 0x00 */
 	uint64_t	vg_rax;			/* 0x08 */
@@ -879,7 +872,6 @@ struct vcpu {
 	uint32_t vc_vmx_vmcs_state;		/* [a] */
 #define VMCS_CLEARED	0
 #define VMCS_LAUNCHED	1
-	uint64_t vc_vmx_invept_op;
 
 	/* SVM only (all requiring [v]) */
 	vaddr_t vc_svm_hsa_va;

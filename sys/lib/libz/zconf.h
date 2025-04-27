@@ -233,10 +233,12 @@
 #  endif
 #endif
 
-#if defined(ZLIB_CONST) && !defined(z_const)
-#  define z_const const
-#else
-#  define z_const
+#ifndef z_const
+#  ifdef ZLIB_CONST
+#    define z_const const
+#  else
+#    define z_const
+#  endif
 #endif
 
 #ifdef Z_SOLO
@@ -439,11 +441,11 @@ typedef uLong FAR uLongf;
 #  define z_off_t long
 #endif
 
-#ifdef HAVE_UNISTD_H    /* may be set to #if 1 by ./configure */
+#if HAVE_UNISTD_H-0     /* may be set to #if 1 by ./configure */
 #  define Z_HAVE_UNISTD_H
 #endif
 
-#ifdef HAVE_STDARG_H    /* may be set to #if 1 by ./configure */
+#if HAVE_STDARG_H-0     /* may be set to #if 1 by ./configure */
 #  define Z_HAVE_STDARG_H
 #endif
 

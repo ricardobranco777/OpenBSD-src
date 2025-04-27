@@ -1,4 +1,4 @@
-/* $OpenBSD: acpi.c,v 1.439 2024/09/04 21:39:18 hastings Exp $ */
+/* $OpenBSD: acpi.c,v 1.444 2025/03/24 09:53:20 jan Exp $ */
 /*
  * Copyright (c) 2005 Thorsten Lockert <tholo@sigmasoft.com>
  * Copyright (c) 2005 Jordan Hargrave <jordan@openbsd.org>
@@ -324,7 +324,8 @@ acpi_gasio(struct acpi_softc *sc, int iodir, int iospace, uint64_t address,
 			return (0);
 		}
 
-		pc = pci_lookup_segment(ACPI_PCI_SEG(address));
+		pc = pci_lookup_segment(ACPI_PCI_SEG(address),
+		    ACPI_PCI_BUS(address));
 		tag = pci_make_tag(pc,
 		    ACPI_PCI_BUS(address), ACPI_PCI_DEV(address),
 		    ACPI_PCI_FN(address));
@@ -642,7 +643,7 @@ acpi_getpci(struct aml_node *node, void *arg)
 		free(pci, M_DEVBUF, sizeof(*pci));
 		return (1);
 	}
-	pc = pci_lookup_segment(pci->seg);
+	pc = pci_lookup_segment(pci->seg, pci->bus);
 	tag = pci_make_tag(pc, pci->bus, pci->dev, pci->fun);
 	reg = pci_conf_read(pc, tag, PCI_ID_REG);
 	if (PCI_VENDOR(reg) == PCI_VENDOR_INVALID) {
@@ -839,7 +840,7 @@ acpi_pci_notify(struct aml_node *node, int ntype, void *arg)
 	if (ntype != 2)
 		return (0);
 
-	pc = pci_lookup_segment(pdev->seg);
+	pc = pci_lookup_segment(pdev->seg, pdev->bus);
 	tag = pci_make_tag(pc, pdev->bus, pdev->dev, pdev->fun);
 	if (pci_get_capability(pc, tag, PCI_CAP_PWRMGMT, &offset, 0)) {
 		/* Clear the PME Status bit if it is set. */
@@ -2968,17 +2969,22 @@ acpi_parsehid(struct aml_node *node, void *arg, char *outcdev, char *outdev,
     size_t devlen)
 {
 	struct acpi_softc	*sc = (struct acpi_softc *)arg;
-	struct aml_value	 res;
+	struct aml_value	 res, *cid;
 	const char		*dev;
 
 	/* NB aml_eisaid returns a static buffer, this must come first */
 	if (aml_evalname(acpi_softc, node->parent, "_CID", 0, NULL, &res) == 0) {
-		switch (res.type) {
+		if (res.type == AML_OBJTYPE_PACKAGE && res.length >= 1) {
+			cid = res.v_package[0];
+		} else {
+			cid = &res;
+		}
+		switch (cid->type) {
 		case AML_OBJTYPE_STRING:
-			dev = res.v_string;
+			dev = cid->v_string;
 			break;
 		case AML_OBJTYPE_INTEGER:
-			dev = aml_eisaid(aml_val2int(&res));
+			dev = aml_eisaid(aml_val2int(cid));
 			break;
 		default:
 			dev = "unknown";
@@ -3036,12 +3042,9 @@ const char *acpi_skip_hids[] = {
 
 /* ISA devices for which we attach a driver later */
 const char *acpi_isa_hids[] = {
-	"PNP0303",	/* IBM Enhanced Keyboard (101/102-key, PS/2 Mouse) */
 	"PNP0400",	/* Standard LPT Parallel Port */
 	"PNP0401",	/* ECP Parallel Port */
 	"PNP0700",	/* PC-class Floppy Disk Controller */
-	"PNP0F03",	/* Microsoft PS/2-style Mouse */
-	"PNP0F13",	/* PS/2 Mouse */
 	NULL
 };
 
@@ -3234,7 +3237,9 @@ acpi_foundhid(struct aml_node *node, void *arg)
 		return (0);
 
 	sta = acpi_getsta(sc, node->parent);
-	if ((sta & (STA_PRESENT | STA_ENABLED)) != (STA_PRESENT | STA_ENABLED))
+	if ((sta & STA_PRESENT) == 0 && (sta & STA_DEV_OK) == 0)
+		return (1);
+	if ((sta & STA_ENABLED) == 0)
 		return (0);
 
 	if (aml_evalinteger(sc, node->parent, "_CCA", 0, NULL, &cca))

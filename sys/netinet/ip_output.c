@@ -1,4 +1,4 @@
-/*	$OpenBSD: ip_output.c,v 1.401 2024/07/02 18:33:47 bluhm Exp $	*/
+/*	$OpenBSD: ip_output.c,v 1.407 2025/03/12 01:44:27 yasuoka Exp $	*/
 /*	$NetBSD: ip_output.c,v 1.28 1996/02/13 23:43:07 christos Exp $	*/
 
 /*
@@ -87,8 +87,9 @@ void in_delayed_cksum(struct mbuf *);
 int ip_output_ipsec_lookup(struct mbuf *m, int hlen,
     const struct ipsec_level *seclevel, struct tdb **, int ipsecflowinfo);
 void ip_output_ipsec_pmtu_update(struct tdb *, struct route *, struct in_addr,
-    int, int);
-int ip_output_ipsec_send(struct tdb *, struct mbuf *, struct route *, int);
+    int);
+int ip_output_ipsec_send(struct tdb *, struct mbuf *, struct route *, u_int,
+    int);
 
 /*
  * IP output.  The packet in mbuf chain m contains a skeletal IP
@@ -110,9 +111,7 @@ ip_output(struct mbuf *m, struct mbuf *opt, struct route *ro, int flags,
 	struct sockaddr_in *dst;
 	struct tdb *tdb = NULL;
 	u_long mtu;
-#if NPF > 0
 	u_int orig_rtableid;
-#endif
 
 	NET_ASSERT_LOCKED();
 
@@ -147,8 +146,8 @@ ip_output(struct mbuf *m, struct mbuf *opt, struct route *ro, int flags,
 		goto bad;
 	}
 
-#if NPF > 0
 	orig_rtableid = m->m_pkthdr.ph_rtableid;
+#if NPF > 0
 reroute:
 #endif
 
@@ -211,7 +210,8 @@ reroute:
 			error = EHOSTUNREACH;
 			goto bad;
 		}
-		if ((mtu = ro->ro_rt->rt_mtu) == 0)
+		mtu = atomic_load_int(&ro->ro_rt->rt_mtu);
+		if (mtu == 0)
 			mtu = ifp->if_mtu;
 
 		if (ro->ro_rt->rt_flags & RTF_GATEWAY)
@@ -348,8 +348,6 @@ reroute:
 		 */
 		if (ip->ip_ttl == 0 || (ifp->if_flags & IFF_LOOPBACK) != 0)
 			goto bad;
-
-		goto sendit;
 	}
 
 	/*
@@ -377,7 +375,6 @@ reroute:
 	} else
 		m->m_flags &= ~M_BCAST;
 
-sendit:
 	/*
 	 * If we're doing Path MTU discovery, we need to set DF unless
 	 * the route's MTU is locked.
@@ -392,7 +389,7 @@ sendit:
 	 */
 	if (tdb != NULL) {
 		/* Callee frees mbuf */
-		error = ip_output_ipsec_send(tdb, m, ro,
+		error = ip_output_ipsec_send(tdb, m, ro, orig_rtableid,
 		    (flags & IP_FORWARDING) ? 1 : 0);
 		goto done;
 	}
@@ -470,9 +467,14 @@ sendit:
 		 */
 		if (rtisvalid(ro->ro_rt) &&
 		    ISSET(ro->ro_rt->rt_flags, RTF_HOST) &&
-		    !(ro->ro_rt->rt_locks & RTV_MTU) &&
-		    (ro->ro_rt->rt_mtu > ifp->if_mtu)) {
-			ro->ro_rt->rt_mtu = ifp->if_mtu;
+		    !(ro->ro_rt->rt_locks & RTV_MTU)) {
+			u_int rtmtu;
+
+			rtmtu = atomic_load_int(&ro->ro_rt->rt_mtu);
+			if (rtmtu > ifp->if_mtu) {
+				atomic_cas_uint(&ro->ro_rt->rt_mtu, rtmtu,
+				    ifp->if_mtu);
+			}
 		}
 		ipstat_inc(ips_cantfrag);
 		goto bad;
@@ -540,10 +542,12 @@ ip_output_ipsec_lookup(struct mbuf *m, int hlen,
 
 void
 ip_output_ipsec_pmtu_update(struct tdb *tdb, struct route *ro,
-    struct in_addr dst, int rtableid, int transportmode)
+    struct in_addr dst, int rtableid)
 {
 	struct rtentry *rt = NULL;
 	int rt_mtucloned = 0;
+	int transportmode = (tdb->tdb_dst.sa.sa_family == AF_INET) &&
+	    (tdb->tdb_dst.sin.sin_addr.s_addr == dst.s_addr);
 
 	/* Find a host route to store the mtu in */
 	if (ro != NULL)
@@ -558,9 +562,10 @@ ip_output_ipsec_pmtu_update(struct tdb *tdb, struct route *ro,
 	DPRINTF("spi %08x mtu %d rt %p cloned %d",
 	    ntohl(tdb->tdb_spi), tdb->tdb_mtu, rt, rt_mtucloned);
 	if (rt != NULL) {
-		rt->rt_mtu = tdb->tdb_mtu;
+		atomic_store_int(&rt->rt_mtu, tdb->tdb_mtu);
 		if (ro != NULL && ro->ro_rt != NULL) {
 			rtfree(ro->ro_rt);
+			ro->ro_tableid = rtableid;
 			ro->ro_rt = rtalloc(&ro->ro_dstsa, RT_RESOLVE,
 			    rtableid);
 		}
@@ -570,14 +575,15 @@ ip_output_ipsec_pmtu_update(struct tdb *tdb, struct route *ro,
 }
 
 int
-ip_output_ipsec_send(struct tdb *tdb, struct mbuf *m, struct route *ro, int fwd)
+ip_output_ipsec_send(struct tdb *tdb, struct mbuf *m, struct route *ro,
+    u_int rtableid, int fwd)
 {
 	struct mbuf_list ml;
 	struct ifnet *encif = NULL;
 	struct ip *ip;
 	struct in_addr dst;
 	u_int len;
-	int error, rtableid, tso = 0;
+	int error, tso = 0;
 
 #if NPF > 0
 	/*
@@ -610,15 +616,9 @@ ip_output_ipsec_send(struct tdb *tdb, struct mbuf *m, struct route *ro, int fwd)
 
 	/* Check if we are allowed to fragment */
 	dst = ip->ip_dst;
-	rtableid = m->m_pkthdr.ph_rtableid;
 	if (ip_mtudisc && (ip->ip_off & htons(IP_DF)) && tdb->tdb_mtu &&
 	    len > tdb->tdb_mtu && tdb->tdb_mtutimeout > gettime()) {
-		int transportmode;
-
-		transportmode = (tdb->tdb_dst.sa.sa_family == AF_INET) &&
-		    (tdb->tdb_dst.sin.sin_addr.s_addr == dst.s_addr);
-		ip_output_ipsec_pmtu_update(tdb, ro, dst, rtableid,
-		    transportmode);
+		ip_output_ipsec_pmtu_update(tdb, ro, dst, rtableid);
 		ipsec_adjust_mtu(m, tdb->tdb_mtu);
 		m_freem(m);
 		return EMSGSIZE;
@@ -647,7 +647,8 @@ ip_output_ipsec_send(struct tdb *tdb, struct mbuf *m, struct route *ro, int fwd)
 	KERNEL_LOCK();
 	while ((m = ml_dequeue(&ml)) != NULL) {
 		/* Callee frees mbuf */
-		error = ipsp_process_packet(m, tdb, AF_INET, 0);
+		error = ipsp_process_packet(m, tdb, AF_INET, 0,
+		    IPSP_DF_INHERIT);
 		if (error)
 			break;
 	}
@@ -661,7 +662,7 @@ ip_output_ipsec_send(struct tdb *tdb, struct mbuf *m, struct route *ro, int fwd)
 	if (!error && tso)
 		tcpstat_inc(tcps_outswtso);
 	if (ip_mtudisc && error == EMSGSIZE)
-		ip_output_ipsec_pmtu_update(tdb, ro, dst, rtableid, 0);
+		ip_output_ipsec_pmtu_update(tdb, ro, dst, rtableid);
 	return error;
 }
 #endif /* IPSEC */
@@ -1759,7 +1760,7 @@ ip_mloopback(struct ifnet *ifp, struct mbuf *m, struct sockaddr_in *dst)
 		 * than the interface's MTU.  Can this possibly matter?
 		 */
 		in_hdr_cksum_out(copym, NULL);
-		if_input_local(ifp, copym, dst->sin_family);
+		if_input_local(ifp, copym, dst->sin_family, NULL);
 	}
 }
 

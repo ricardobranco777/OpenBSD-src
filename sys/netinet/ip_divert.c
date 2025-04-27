@@ -1,4 +1,4 @@
-/*      $OpenBSD: ip_divert.c,v 1.97 2024/08/16 09:20:35 mvs Exp $ */
+/*      $OpenBSD: ip_divert.c,v 1.102 2025/03/11 15:31:03 mvs Exp $ */
 
 /*
  * Copyright (c) 2009 Michele Marchetto <michele@openbsd.org>
@@ -63,8 +63,8 @@ u_int   divert_recvspace = DIVERT_RECVSPACE;	/* [a] */
 #endif
 
 const struct sysctl_bounded_args divertctl_vars[] = {
-	{ DIVERTCTL_RECVSPACE, &divert_recvspace, 0, INT_MAX },
-	{ DIVERTCTL_SENDSPACE, &divert_sendspace, 0, INT_MAX },
+	{ DIVERTCTL_RECVSPACE, &divert_recvspace, 0, SB_MAX },
+	{ DIVERTCTL_SENDSPACE, &divert_sendspace, 0, SB_MAX },
 };
 
 const struct pr_usrreqs divert_usrreqs = {
@@ -168,7 +168,7 @@ divert_output(struct inpcb *inp, struct mbuf *m, struct mbuf *nam,
 			error = ENETDOWN;
 			goto fail;
 		}
-		ipv4_input(ifp, m);
+		ipv4_input(ifp, m, NULL);
 		if_put(ifp);
 	} else {
 		m->m_pkthdr.ph_rtableid = inp->inp_rtableid;
@@ -236,7 +236,7 @@ divert_packet(struct mbuf *m, int dir, u_int16_t divert_port)
 		if_put(ifp);
 	} else {
 		/*
-		 * Calculate IP and protocol checksums for outbound packet 
+		 * Calculate IP and protocol checksums for outbound packet
 		 * diverted to userland.  pf rule diverts before cksum offload.
 		 */
 		in_hdr_cksum_out(m, NULL);
@@ -245,7 +245,7 @@ divert_packet(struct mbuf *m, int dir, u_int16_t divert_port)
 
 	so = inp->inp_socket;
 	mtx_enter(&so->so_rcv.sb_mtx);
-	if (sbappendaddr(so, &so->so_rcv, sintosa(&sin), m, NULL) == 0) {
+	if (sbappendaddr(&so->so_rcv, sintosa(&sin), m, NULL) == 0) {
 		mtx_leave(&so->so_rcv.sb_mtx);
 		divstat_inc(divs_fullsock);
 		goto bad;
@@ -272,12 +272,11 @@ divert_attach(struct socket *so, int proto, int wait)
 	if ((so->so_state & SS_PRIV) == 0)
 		return EACCES;
 
-	error = in_pcballoc(so, &divbtable, wait);
-	if (error)
-		return error;
-
 	error = soreserve(so, atomic_load_int(&divert_sendspace),
 	    atomic_load_int(&divert_recvspace));
+	if (error)
+		return error;
+	error = in_pcballoc(so, &divbtable, wait);
 	if (error)
 		return error;
 

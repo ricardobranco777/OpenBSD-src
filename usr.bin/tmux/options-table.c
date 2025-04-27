@@ -1,4 +1,4 @@
-/* $OpenBSD: options-table.c,v 1.178 2024/09/16 20:28:22 nicm Exp $ */
+/* $OpenBSD: options-table.c,v 1.190 2025/03/24 20:01:03 nicm Exp $ */
 
 /*
  * Copyright (c) 2011 Nicholas Marriott <nicholas.marriott@gmail.com>
@@ -63,6 +63,12 @@ static const char *options_table_visual_bell_list[] = {
 static const char *options_table_cursor_style_list[] = {
 	"default", "blinking-block", "block", "blinking-underline", "underline",
 	"blinking-bar", "bar", NULL
+};
+static const char *options_table_pane_scrollbars_list[] = {
+	"off", "modal", "on", NULL
+};
+static const char *options_table_pane_scrollbars_position_list[] = {
+	"right", "left", NULL
 };
 static const char *options_table_pane_status_list[] = {
 	"off", "top", "bottom", NULL
@@ -208,6 +214,7 @@ const struct options_name_map options_other_names[] = {
 	{ "display-panes-active-color", "display-panes-active-colour" },
 	{ "clock-mode-color", "clock-mode-colour" },
 	{ "cursor-color", "cursor-colour" },
+	{ "prompt-cursor-color", "prompt-cursor-colour" },
 	{ "pane-colors", "pane-colours" },
 	{ NULL, NULL }
 };
@@ -247,6 +254,15 @@ const struct options_table_entry options_table[] = {
 		  "Each entry is an alias and a command separated by '='."
 	},
 
+	{ .name = "codepoint-widths",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_SERVER,
+	  .flags = OPTIONS_TABLE_IS_ARRAY,
+	  .default_str = "",
+	  .separator = ",",
+	  .text = "Array of override widths for Unicode codepoints."
+	},
+
 	{ .name = "copy-command",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SERVER,
@@ -268,6 +284,13 @@ const struct options_table_entry options_table[] = {
 	  .choices = options_table_cursor_style_list,
 	  .default_num = 0,
 	  .text = "Style of the cursor."
+	},
+
+	{ .name = "default-client-command",
+	  .type = OPTIONS_TABLE_COMMAND,
+	  .scope = OPTIONS_TABLE_SERVER,
+	  .default_str = "new-session",
+	  .text = "Default command to run when tmux is run without a command."
 	},
 
 	{ .name = "default-terminal",
@@ -339,6 +362,15 @@ const struct options_table_entry options_table[] = {
 	  .default_str = "",
 	  .text = "Location of the command prompt history file. "
 		  "Empty does not write a history file."
+	},
+
+	{ .name = "input-buffer-size",
+	  .type = OPTIONS_TABLE_NUMBER,
+	  .scope = OPTIONS_TABLE_SERVER,
+	  .minimum = INPUT_BUF_DEFAULT_SIZE,
+	  .maximum = UINT_MAX,
+	  .default_num = INPUT_BUF_DEFAULT_SIZE,
+	  .text = "Number of byte accpted in a single input before dropping."
 	},
 
 	{ .name = "menu-style",
@@ -572,6 +604,18 @@ const struct options_table_entry options_table[] = {
 		  "If changed, the new value applies only to new panes."
 	},
 
+	{ .name = "initial-repeat-time",
+	  .type = OPTIONS_TABLE_NUMBER,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .minimum = 0,
+	  .maximum = 2000000,
+	  .default_num = 0,
+	  .unit = "milliseconds",
+	  .text = "Time to wait for a key binding to repeat the first time the "
+	          "key is pressed, if it is bound with the '-r' flag. "
+	          "Subsequent presses use the 'repeat-time' option."
+	},
+
 	{ .name = "key-table",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SESSION,
@@ -659,7 +703,7 @@ const struct options_table_entry options_table[] = {
 	  .type = OPTIONS_TABLE_NUMBER,
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .minimum = 0,
-	  .maximum = SHRT_MAX,
+	  .maximum = 2000000,
 	  .default_num = 500,
 	  .unit = "milliseconds",
 	  .text = "Time to wait for a key binding to repeat, if it is bound "
@@ -820,11 +864,26 @@ const struct options_table_entry options_table[] = {
 	  .text = "Style of the status line."
 	},
 
+	{ .name = "prompt-cursor-colour",
+	  .type = OPTIONS_TABLE_COLOUR,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .default_num = 6,
+	  .text = "Colour of the cursor when in the command prompt."
+	},
+
+	{ .name = "prompt-cursor-style",
+	  .type = OPTIONS_TABLE_CHOICE,
+	  .scope = OPTIONS_TABLE_SESSION,
+	  .choices = options_table_cursor_style_list,
+	  .default_num = 0,
+	  .text = "Style of the cursor when in the command prompt."
+	},
+
 	{ .name = "update-environment",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_SESSION,
 	  .flags = OPTIONS_TABLE_IS_ARRAY,
-	  .default_str = "DISPLAY KRB5CCNAME SSH_ASKPASS SSH_AUTH_SOCK "
+	  .default_str = "DISPLAY KRB5CCNAME MSYSTEM SSH_ASKPASS SSH_AUTH_SOCK "
 			 "SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY",
 	  .text = "List of environment variables to update in the session "
 		  "environment when a client is attached."
@@ -969,6 +1028,36 @@ const struct options_table_entry options_table[] = {
 	  .flags = OPTIONS_TABLE_IS_STYLE,
 	  .separator = ",",
 	  .text = "Style of the marked line in copy mode."
+	},
+
+	{ .name = "copy-mode-position-format",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
+	  .default_str = "#[align=right]"
+	                 "#{t/p:top_line_time}#{?#{e|>:#{top_line_time},0}, ,}"
+	                 "[#{scroll_position}/#{history_size}]"
+	                 "#{?search_timed_out, (timed out),"
+	                 "#{?search_count, (#{search_count}"
+	                 "#{?search_count_partial,+,} results),}}",
+	  .text = "Format of the position indicator in copy mode."
+	},
+
+	{ .name = "copy-mode-position-style",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW,
+	  .default_str = "#{mode-style}",
+	  .flags = OPTIONS_TABLE_IS_STYLE,
+	  .separator = ",",
+	  .text = "Style of position indicator in copy mode."
+	},
+
+	{ .name = "copy-mode-selection-style",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW,
+	  .default_str = "#{mode-style}",
+	  .flags = OPTIONS_TABLE_IS_STYLE,
+	  .separator = ",",
+	  .text = "Style of selection in copy mode."
 	},
 
 	{ .name = "fill-character",
@@ -1121,7 +1210,32 @@ const struct options_table_entry options_table[] = {
 	  .text = "The default colour palette for colours zero to 255."
 	},
 
-	{ .name = "popup-style",
+	{ .name = "pane-scrollbars",
+	  .type = OPTIONS_TABLE_CHOICE,
+	  .scope = OPTIONS_TABLE_WINDOW,
+	  .choices = options_table_pane_scrollbars_list,
+	  .default_num = PANE_SCROLLBARS_OFF,
+	  .text = "Pane scrollbar state."
+	},
+
+	{ .name = "pane-scrollbars-style",
+	  .type = OPTIONS_TABLE_STRING,
+	  .scope = OPTIONS_TABLE_WINDOW|OPTIONS_TABLE_PANE,
+	  .default_str = "bg=black,fg=white,width=1,pad=0",
+	  .flags = OPTIONS_TABLE_IS_STYLE,
+	  .separator = ",",
+	  .text = "Style of the pane scrollbar."
+	},
+
+	{ .name = "pane-scrollbars-position",
+	  .type = OPTIONS_TABLE_CHOICE,
+	  .scope = OPTIONS_TABLE_WINDOW,
+	  .choices = options_table_pane_scrollbars_position_list,
+	  .default_num = PANE_SCROLLBARS_RIGHT,
+	  .text = "Pane scrollbar position."
+	},
+
+        { .name = "popup-style",
 	  .type = OPTIONS_TABLE_STRING,
 	  .scope = OPTIONS_TABLE_WINDOW,
 	  .default_str = "default",
@@ -1348,6 +1462,8 @@ const struct options_table_entry options_table[] = {
 	OPTIONS_TABLE_HOOK("client-focus-out", ""),
 	OPTIONS_TABLE_HOOK("client-resized", ""),
 	OPTIONS_TABLE_HOOK("client-session-changed", ""),
+	OPTIONS_TABLE_HOOK("client-light-theme", ""),
+	OPTIONS_TABLE_HOOK("client-dark-theme", ""),
 	OPTIONS_TABLE_HOOK("command-error", ""),
 	OPTIONS_TABLE_PANE_HOOK("pane-died", ""),
 	OPTIONS_TABLE_PANE_HOOK("pane-exited", ""),

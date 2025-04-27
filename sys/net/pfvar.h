@@ -1,4 +1,4 @@
-/*	$OpenBSD: pfvar.h,v 1.539 2024/08/27 13:52:41 aisha Exp $ */
+/*	$OpenBSD: pfvar.h,v 1.542 2024/12/26 10:15:27 bluhm Exp $ */
 
 /*
  * Copyright (c) 2001 Daniel Hartmeier
@@ -36,7 +36,6 @@
 
 #include <sys/queue.h>
 #include <sys/tree.h>
-#include <sys/rwlock.h>
 #include <sys/syslimits.h>
 #include <sys/refcnt.h>
 #include <sys/timeout.h>
@@ -1242,7 +1241,7 @@ struct pf_status {
 #define PF_PRIO_ZERO		0xff		/* match "prio 0" packets */
 
 struct pf_queue_bwspec {
-	u_int		absolute;
+	uint64_t	absolute;
 	u_int		percent;
 };
 
@@ -1859,7 +1858,7 @@ void			 pf_mbuf_unlink_inpcb(struct mbuf *);
 u_int8_t*		 pf_find_tcpopt(u_int8_t *, u_int8_t *, size_t,
 			    u_int8_t, u_int8_t);
 u_int8_t		 pf_get_wscale(struct pf_pdesc *);
-u_int16_t		 pf_get_mss(struct pf_pdesc *);
+u_int16_t		 pf_get_mss(struct pf_pdesc *, uint16_t);
 struct mbuf *		 pf_build_tcp(const struct pf_rule *, sa_family_t,
 			    const struct pf_addr *, const struct pf_addr *,
 			    u_int16_t, u_int16_t, u_int32_t, u_int32_t,

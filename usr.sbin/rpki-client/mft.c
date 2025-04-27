@@ -1,4 +1,4 @@
-/*	$OpenBSD: mft.c,v 1.119 2024/09/12 10:33:25 tb Exp $ */
+/*	$OpenBSD: mft.c,v 1.122 2025/02/25 15:55:26 claudio Exp $ */
 /*
  * Copyright (c) 2022 Theo Buehler <tb@openbsd.org>
  * Copyright (c) 2019 Kristaps Dzonsons <kristaps@bsd.lv>
@@ -372,6 +372,10 @@ mft_parse_econtent(const char *fn, struct mft *mft, const unsigned char *d,
 		goto out;
 	}
 
+	if (sk_FileAndHash_num(mft_asn1->fileList) <= 0) {
+		warnx("%s: no files in manifest fileList", fn);
+		goto out;
+	}
 	if (sk_FileAndHash_num(mft_asn1->fileList) >= MAX_MANIFEST_ENTRIES) {
 		warnx("%s: %d exceeds manifest entry limit (%d)", fn,
 		    sk_FileAndHash_num(mft_asn1->fileList),
@@ -538,6 +542,7 @@ mft_buffer(struct ibuf *b, const struct mft *p)
 	io_simple_buffer(b, &p->repoid, sizeof(p->repoid));
 	io_simple_buffer(b, &p->talid, sizeof(p->talid));
 	io_simple_buffer(b, &p->certid, sizeof(p->certid));
+	io_simple_buffer(b, &p->seqnum_gap, sizeof(p->seqnum_gap));
 	io_str_buffer(b, p->path);
 
 	io_str_buffer(b, p->aia);
@@ -571,6 +576,7 @@ mft_read(struct ibuf *b)
 	io_read_buf(b, &p->repoid, sizeof(p->repoid));
 	io_read_buf(b, &p->talid, sizeof(p->talid));
 	io_read_buf(b, &p->certid, sizeof(p->certid));
+	io_read_buf(b, &p->seqnum_gap, sizeof(p->seqnum_gap));
 	io_read_str(b, &p->path);
 
 	io_read_str(b, &p->aia);
@@ -627,4 +633,36 @@ mft_compare_seqnum(const struct mft *a, const struct mft *b)
 		return -1;
 
 	return 0;
+}
+
+/*
+ * Test if there is a gap in the sequence numbers of two MFTs.
+ * Return 1 if a gap is detected.
+ */
+int
+mft_seqnum_gap_present(const struct mft *a, const struct mft *b, BN_CTX *bn_ctx)
+{
+	BIGNUM *diff, *seqnum_a, *seqnum_b;
+	int ret = 0;
+
+	BN_CTX_start(bn_ctx);
+	if ((diff = BN_CTX_get(bn_ctx)) == NULL ||
+	    (seqnum_a = BN_CTX_get(bn_ctx)) == NULL ||
+	    (seqnum_b = BN_CTX_get(bn_ctx)) == NULL)
+		errx(1, "BN_CTX_get");
+
+	if (!BN_hex2bn(&seqnum_a, a->seqnum))
+		errx(1, "BN_hex2bn");
+
+	if (!BN_hex2bn(&seqnum_b, b->seqnum))
+		errx(1, "BN_hex2bn");
+
+	if (!BN_sub(diff, seqnum_a, seqnum_b))
+		errx(1, "BN_sub");
+
+	ret = !BN_is_one(diff);
+
+	BN_CTX_end(bn_ctx);
+
+	return ret;
 }

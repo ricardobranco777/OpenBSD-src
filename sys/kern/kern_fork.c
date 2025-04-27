@@ -1,4 +1,4 @@
-/*	$OpenBSD: kern_fork.c,v 1.265 2024/08/21 03:07:45 deraadt Exp $	*/
+/*	$OpenBSD: kern_fork.c,v 1.269 2025/03/10 09:28:56 claudio Exp $	*/
 /*	$NetBSD: kern_fork.c,v 1.29 1996/02/09 18:59:34 christos Exp $	*/
 
 /*
@@ -61,7 +61,7 @@
 
 #include <sys/syscallargs.h>
 
-#include <uvm/uvm.h>
+#include <uvm/uvm_extern.h>
 #include <machine/tcb.h>
 
 int	nprocesses = 1;		/* process 0 */
@@ -457,8 +457,9 @@ fork1(struct proc *curp, int flags, void (*func)(void *), void *arg,
 	LIST_INSERT_AFTER(curpr, pr, ps_pglist);
 	LIST_INSERT_HEAD(&curpr->ps_children, pr, ps_sibling);
 
+	mtx_enter(&pr->ps_mtx);
 	if (pr->ps_flags & PS_TRACED) {
-		pr->ps_oppid = curpr->ps_pid;
+		pr->ps_opptr = curpr;
 		process_reparent(pr, curpr->ps_pptr);
 
 		/*
@@ -473,6 +474,7 @@ fork1(struct proc *curp, int flags, void (*func)(void *), void *arg,
 			pr->ps_ptstat->pe_other_pid = curpr->ps_pid;
 		}
 	}
+	mtx_leave(&pr->ps_mtx);
 
 	/*
 	 * For new processes, set accounting bits and mark as complete.
@@ -588,12 +590,13 @@ thread_fork(struct proc *curp, void *stack, void *tcb, pid_t *tidptr,
 	pr->ps_threadcnt++;
 
 	/*
-	 * if somebody else wants to take us to single threaded mode,
-	 * count ourselves in.
+	 * if somebody else wants to take us to single threaded mode
+	 * or suspend the process, count ourselves in.
 	 */
-	if (pr->ps_single) {
-		pr->ps_singlecnt++;
-		atomic_setbits_int(&p->p_flag, P_SUSPSINGLE);
+	if (pr->ps_single != NULL || ISSET(pr->ps_flags, PS_STOPPING)) {
+		pr->ps_suspendcnt++;
+		atomic_setbits_int(&p->p_flag,
+		    curp->p_flag & (P_SUSPSINGLE | P_SUSPSIG));
 	}
 	mtx_leave(&pr->ps_mtx);
 

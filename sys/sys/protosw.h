@@ -1,4 +1,4 @@
-/*	$OpenBSD: protosw.h,v 1.68 2024/08/16 09:20:35 mvs Exp $	*/
+/*	$OpenBSD: protosw.h,v 1.72 2025/03/02 21:28:32 bluhm Exp $	*/
 /*	$NetBSD: protosw.h,v 1.10 1996/04/09 20:55:32 cgd Exp $	*/
 
 /*-
@@ -63,6 +63,7 @@ struct domain;
 struct proc;
 struct stat;
 struct ifnet;
+struct netstack;
 
 struct pr_usrreqs {
 	int	(*pru_attach)(struct socket *, int, int);
@@ -96,7 +97,7 @@ struct protosw {
 
 /* protocol-protocol hooks */
 					/* input to protocol (from below) */
-	int	(*pr_input)(struct mbuf **, int *, int, int);
+	int	(*pr_input)(struct mbuf **, int *, int, int, struct netstack *);
 					/* control input (from below) */
 	void	(*pr_ctlinput)(int, struct sockaddr *, u_int, void *);
 					/* control output (from above) */
@@ -130,7 +131,6 @@ struct protosw {
 					   socket */
 #define PR_SPLICE	0x0040		/* socket splicing is possible */
 #define PR_MPINPUT	0x0080		/* input runs with shared netlock */
-#define PR_MPSOCKET	0x0100		/* socket uses shared netlock */
 #define PR_MPSYSCTL	0x0200		/* mp-safe sysctl(2) handler */
 
 /*
@@ -254,10 +254,7 @@ char	*prcorequests[] = {
 
 #include <sys/mbuf.h>
 #include <sys/socketvar.h>
-#include <sys/systm.h>
 
-struct ifnet;
-struct sockaddr;
 const struct protosw *pffindproto(int, int, int);
 const struct protosw *pffindtype(int, int);
 const struct domain *pffinddomain(int);

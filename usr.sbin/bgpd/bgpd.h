@@ -1,4 +1,4 @@
-/*	$OpenBSD: bgpd.h,v 1.496 2024/09/04 15:06:36 claudio Exp $ */
+/*	$OpenBSD: bgpd.h,v 1.519 2025/03/21 01:06:48 jsg Exp $ */
 
 /*
  * Copyright (c) 2003, 2004 Henning Brauer <henning@openbsd.org>
@@ -23,14 +23,13 @@
 #include <sys/queue.h>
 #include <sys/tree.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
 #include <net/if.h>
+#include <netinet/if_ether.h>
 
-#include <poll.h>
-#include <stdarg.h>
 #include <stdint.h>
-
 #include <imsg.h>
+
+#include "monotime.h"
 
 #define	BGP_VERSION			4
 #define	RTR_MAX_VERSION			2
@@ -49,13 +48,14 @@
 #define	SET_NAME_LEN			128
 
 #define	MAX_PKTSIZE			4096
-#define	MIN_HOLDTIME			3
-#define	READ_BUF_SIZE			65535
-#define	MAX_SOCK_BUF			(4 * READ_BUF_SIZE)
+#define	MAX_EXT_PKTSIZE			65535
+#define	MAX_BGPD_IMSGSIZE		(128 * 1024)
+#define	MAX_SOCK_BUF			(4 * IBUF_READ_SIZE)
 #define	RT_BUF_SIZE			16384
 #define	MAX_RTSOCK_BUF			(2 * 1024 * 1024)
 #define	MAX_COMM_MATCH			3
 #define	MAX_ASPA_SPAS_COUNT		10000
+#define	MIN_HOLDTIME			3
 
 #define	BGPD_OPT_VERBOSE		0x0001
 #define	BGPD_OPT_VERBOSE2		0x0002
@@ -70,7 +70,7 @@
 #define	BGPD_FLAG_DECISION_TRANS_AS	0x0200
 #define	BGPD_FLAG_DECISION_MED_ALWAYS	0x0400
 #define	BGPD_FLAG_DECISION_ALL_PATHS	0x0800
-#define	BGPD_FLAG_NO_AS_SET		0x1000
+#define	BGPD_FLAG_PERMIT_AS_SET		0x1000
 
 #define	BGPD_LOG_UPDATES		0x0001
 
@@ -130,6 +130,7 @@
  * IMSG_XON message will be sent and the RDE will produce more messages again.
  */
 #define RDE_RUNNER_ROUNDS	100
+#define RDE_REAPER_ROUNDS	5000
 #define SESS_MSG_HIGH_MARK	2000
 #define SESS_MSG_LOW_MARK	500
 #define CTL_MSG_HIGH_MARK	500
@@ -154,12 +155,14 @@ enum reconf_action {
 #define	AFI_UNSPEC	0
 #define	AFI_IPv4	1
 #define	AFI_IPv6	2
+#define	AFI_L2VPN	25
 
 /* Subsequent Address Family Identifier as per RFC 4760 */
 #define	SAFI_NONE		0
 #define	SAFI_UNICAST		1
 #define	SAFI_MULTICAST		2
 #define	SAFI_MPLS		4
+#define	SAFI_EVPN		70	/* RFC 7432 */
 #define	SAFI_MPLSVPN		128
 #define	SAFI_FLOWSPEC		133
 #define	SAFI_VPNFLOWSPEC	134
@@ -180,7 +183,8 @@ extern const struct aid aid_vals[];
 #define	AID_VPN_IPv6	4
 #define	AID_FLOWSPECv4	5
 #define	AID_FLOWSPECv6	6
-#define	AID_MAX		7
+#define	AID_EVPN	7
+#define	AID_MAX		8
 #define	AID_MIN		1	/* skip AID_UNSPEC since that is a dummy */
 
 #define AID_VALS	{					\
@@ -192,14 +196,33 @@ extern const struct aid aid_vals[];
 	{ AFI_IPv6, AF_INET6, SAFI_MPLSVPN, "IPv6 vpn" },	\
 	{ AFI_IPv4, AF_INET, SAFI_FLOWSPEC, "IPv4 flowspec" },	\
 	{ AFI_IPv6, AF_INET6, SAFI_FLOWSPEC, "IPv6 flowspec" },	\
+	{ AFI_L2VPN, AF_UNSPEC, SAFI_EVPN, "EVPN" },		\
 }
 
 #define BGP_MPLS_BOS	0x01
+#define ESI_ADDR_LEN	10
+
+#define EVPN_ROUTE_TYPE_2	0x02
+#define EVPN_ROUTE_TYPE_3	0x03
+#define EVPN_ROUTE_TYPE_5	0x05
+
+struct evpn_addr {
+	union {
+		struct in_addr	v4;
+		struct in6_addr	v6;
+	};
+	uint32_t	ethtag;
+	uint8_t		mac[ETHER_ADDR_LEN];
+	uint8_t		esi[ESI_ADDR_LEN];
+	uint8_t		aid;
+	uint8_t		type;
+};
 
 struct bgpd_addr {
 	union {
 		struct in_addr		v4;
 		struct in6_addr		v6;
+		struct evpn_addr	evpn;
 		/* maximum size for a prefix is 256 bits */
 	};		    /* 128-bit address */
 	uint64_t	rd;		/* route distinguisher for VPN addrs */
@@ -256,7 +279,7 @@ struct rde_prefixset {
 	char				name[SET_NAME_LEN];
 	struct trie_head		th;
 	SIMPLEQ_ENTRY(rde_prefixset)	entry;
-	time_t				lastchange;
+	monotime_t			lastchange;
 	int				dirty;
 };
 SIMPLEQ_HEAD(rde_prefixset_head, rde_prefixset);
@@ -317,6 +340,7 @@ struct bgpd_config {
 	uint16_t				 holdtime;
 	uint16_t				 min_holdtime;
 	uint16_t				 connectretry;
+	uint16_t				 staletime;
 	uint8_t					 fib_priority;
 	uint8_t					 filtered_in_locrib;
 };
@@ -379,7 +403,7 @@ enum auth_enc_alg {
 	AUTH_EALG_AES,
 };
 
-struct peer_auth {
+struct auth_config {
 	char			md5key[TCP_MD5_KEY_LEN];
 	char			auth_key_in[IPSEC_AUTH_KEY_LEN];
 	char			auth_key_out[IPSEC_AUTH_KEY_LEN];
@@ -404,19 +428,24 @@ struct capabilities {
 		int16_t	timeout;	/* graceful restart timeout */
 		int8_t	flags[AID_MAX];	/* graceful restart per AID flags */
 		int8_t	restart;	/* graceful restart, RFC 4724 */
+		int8_t	grnotification;	/* graceful notification, RFC 8538 */
 	}	grestart;
 	int8_t	mp[AID_MAX];		/* multiprotocol extensions, RFC 4760 */
 	int8_t	add_path[AID_MAX];	/* ADD_PATH, RFC 7911 */
+	int8_t	ext_nh[AID_MAX];	/* Ext Nexthop Encoding, RFC 8950 */
 	int8_t	refresh;		/* route refresh, RFC 2918 */
 	int8_t	as4byte;		/* 4-byte ASnum, RFC 4893 */
 	int8_t	enhanced_rr;		/* enhanced route refresh, RFC 7313 */
 	int8_t	policy;			/* Open Policy, RFC 9234, 2 = enforce */
+	int8_t	ext_msg;		/* Extended Msg, RFC 8654 */
 };
 
 enum capa_codes {
 	CAPA_NONE = 0,
 	CAPA_MP = 1,
 	CAPA_REFRESH = 2,
+	CAPA_EXT_NEXTHOP = 5,
+	CAPA_EXT_MSG = 6,
 	CAPA_ROLE = 9,
 	CAPA_RESTART = 64,
 	CAPA_AS4BYTE = 65,
@@ -431,6 +460,7 @@ enum capa_codes {
 #define	CAPA_GR_RESTARTING	0x08
 #define	CAPA_GR_TIMEMASK	0x0fff
 #define	CAPA_GR_R_FLAG		0x8000
+#define	CAPA_GR_N_FLAG		0x4000
 #define	CAPA_GR_F_FLAG		0x80
 
 /* flags for RFC 7911 - enhanced router refresh */
@@ -452,7 +482,6 @@ struct peer_config {
 	struct bgpd_addr	 remote_addr;
 	struct bgpd_addr	 local_addr_v4;
 	struct bgpd_addr	 local_addr_v6;
-	struct peer_auth	 auth;
 	struct capabilities	 capabilities;
 	struct addpath_eval	 eval;
 	char			 group[PEER_DESCR_LEN];
@@ -475,6 +504,8 @@ struct peer_config {
 	uint16_t		 max_out_prefix_restart;
 	uint16_t		 holdtime;
 	uint16_t		 min_holdtime;
+	uint16_t		 connectretry;
+	uint16_t		 staletime;
 	uint16_t		 local_short_as;
 	uint16_t		 remote_port;
 	uint8_t			 template;
@@ -497,7 +528,7 @@ struct peer_config {
 #define PEERFLAG_TRANS_AS	0x01
 #define PEERFLAG_LOG_UPDATES	0x02
 #define PEERFLAG_EVALUATE_ALL	0x04
-#define PEERFLAG_NO_AS_SET	0x08
+#define PEERFLAG_PERMIT_AS_SET	0x08
 
 struct rde_peer_stats {
 	uint64_t			 prefix_rcvd_update;
@@ -570,6 +601,7 @@ enum rtr_error {
 struct rtr_config {
 	SIMPLEQ_ENTRY(rtr_config)	entry;
 	char				descr[PEER_DESCR_LEN];
+	struct auth_config		auth;
 	struct bgpd_addr		remote_addr;
 	struct bgpd_addr		local_addr;
 	uint32_t			id;
@@ -646,9 +678,12 @@ enum imsg_type {
 	IMSG_SOCKET_CONN,
 	IMSG_SOCKET_CONN_CTL,
 	IMSG_SOCKET_CONN_RTR,
+	IMSG_SOCKET_SETUP,
+	IMSG_SOCKET_TEARDOWN,
 	IMSG_RECONF_CONF,
 	IMSG_RECONF_RIB,
 	IMSG_RECONF_PEER,
+	IMSG_RECONF_PEER_AUTH,
 	IMSG_RECONF_FILTER,
 	IMSG_RECONF_LISTENER,
 	IMSG_RECONF_CTRL,
@@ -676,6 +711,7 @@ enum imsg_type {
 	IMSG_SESSION_ADD,
 	IMSG_SESSION_UP,
 	IMSG_SESSION_DOWN,
+	IMSG_SESSION_DELETE,
 	IMSG_SESSION_STALE,
 	IMSG_SESSION_NOGRACE,
 	IMSG_SESSION_FLUSH,
@@ -859,7 +895,7 @@ struct ctl_show_nexthop {
 
 struct ctl_show_set {
 	char			name[SET_NAME_LEN];
-	time_t			lastchange;
+	monotime_t		lastchange;
 	size_t			v4_cnt;
 	size_t			v6_cnt;
 	size_t			as_cnt;
@@ -898,7 +934,7 @@ struct ctl_show_rib {
 	struct bgpd_addr	prefix;
 	struct bgpd_addr	remote_addr;
 	char			descr[PEER_DESCR_LEN];
-	time_t			age;
+	monotime_t		lastchange;
 	uint32_t		remote_id;
 	uint32_t		path_id;
 	uint32_t		local_pref;
@@ -1122,6 +1158,7 @@ struct ext_comm_pairs {
 	{ EXT_COMMUNITY_TRANS_IPV4, 0x0b, "vrfri" },		\
 								\
 	{ EXT_COMMUNITY_TRANS_OPAQUE, 0x06, "ort" },		\
+	{ EXT_COMMUNITY_TRANS_OPAQUE, 0x0c, "encap" },		\
 	{ EXT_COMMUNITY_TRANS_OPAQUE, 0x0d, "defgw" },		\
 								\
 	{ EXT_COMMUNITY_NON_TRANS_OPAQUE, EXT_COMMUNITY_SUBTYPE_OVS, "ovs" }, \
@@ -1293,7 +1330,7 @@ struct as_set {
 	char				 name[SET_NAME_LEN];
 	SIMPLEQ_ENTRY(as_set)		 entry;
 	struct set_table		*set;
-	time_t				 lastchange;
+	monotime_t			 lastchange;
 	int				 dirty;
 };
 
@@ -1392,10 +1429,11 @@ enum mrt_state {
 
 struct mrt {
 	char			rib[PEER_DESCR_LEN];
-	struct msgbuf		wbuf;
 	LIST_ENTRY(mrt)		entry;
+	struct msgbuf		*wbuf;
 	uint32_t		peer_id;
 	uint32_t		group_id;
+	int			fd;
 	enum mrt_type		type;
 	enum mrt_state		state;
 	uint16_t		seqnum;
@@ -1411,6 +1449,7 @@ struct mrt_config {
 
 /* prototypes */
 /* bgpd.c */
+struct pollfd;
 void		 send_nexthop_update(struct kroute_nexthop *);
 void		 send_imsg_session(int, pid_t, void *, uint16_t);
 int		 send_network(int, struct network_config *,
@@ -1505,7 +1544,7 @@ uint16_t	 pftable_ref(uint16_t);
 /* parse.y */
 int			cmdline_symset(char *);
 struct prefixset	*find_prefixset(char *, struct prefixset_head *);
-struct bgpd_config	*parse_config(char *, struct peer_head *,
+struct bgpd_config	*parse_config(const char *, struct peer_head *,
 			    struct rtr_config_head *);
 
 /* pftable.c */
@@ -1552,12 +1591,10 @@ int	trie_roa_check(struct trie_head *, struct bgpd_addr *, uint8_t,
 void	trie_dump(struct trie_head *);
 int	trie_equal(struct trie_head *, struct trie_head *);
 
-/* timer.c */
-time_t			 getmonotime(void);
-
 /* util.c */
-char		*ibuf_get_string(struct ibuf *, size_t);
 const char	*log_addr(const struct bgpd_addr *);
+const char	*log_evpnaddr(const struct bgpd_addr *, struct sockaddr *,
+		    socklen_t);
 const char	*log_in6addr(const struct in6_addr *);
 const char	*log_sockaddr(struct sockaddr *, socklen_t);
 const char	*log_as(uint32_t);
@@ -1585,6 +1622,7 @@ int		 nlri_get_vpn4(struct ibuf *, struct bgpd_addr *, uint8_t *,
 		    int);
 int		 nlri_get_vpn6(struct ibuf *, struct bgpd_addr *, uint8_t *,
 		    int);
+int		 nlri_get_evpn(struct ibuf *, struct bgpd_addr *, uint8_t *);
 int		 prefix_compare(const struct bgpd_addr *,
 		    const struct bgpd_addr *, int);
 void		 inet4applymask(struct in_addr *, const struct in_addr *, int);
@@ -1598,7 +1636,7 @@ sa_family_t	 aid2af(uint8_t);
 int		 af2aid(sa_family_t, uint8_t, uint8_t *);
 struct sockaddr	*addr2sa(const struct bgpd_addr *, uint16_t, socklen_t *);
 void		 sa2addr(struct sockaddr *, struct bgpd_addr *, uint16_t *);
-const char *	 get_baudrate(unsigned long long, char *);
+const char	*get_baudrate(unsigned long long, char *);
 
 /* flowspec.c */
 int	flowspec_valid(const uint8_t *, int, int);
@@ -1653,7 +1691,8 @@ static const char * const eventnames[] = {
 	"OPEN message received",
 	"KEEPALIVE message received",
 	"UPDATE message received",
-	"NOTIFICATION received"
+	"NOTIFICATION received",
+	"graceful NOTIFICATION received",
 };
 
 static const char * const errnames[] = {
@@ -1754,6 +1793,7 @@ static const char * const timernames[] = {
 	"IdleHoldResetTimer",
 	"CarpUndemoteTimer",
 	"RestartTimer",
+	"SessionDownTimer",
 	"RTR RefreshTimer",
 	"RTR RetryTimer",
 	"RTR ExpireTimer",

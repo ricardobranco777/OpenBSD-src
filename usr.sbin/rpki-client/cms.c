@@ -1,4 +1,4 @@
-/*	$OpenBSD: cms.c,v 1.48 2024/06/11 13:09:02 tb Exp $ */
+/*	$OpenBSD: cms.c,v 1.51 2025/02/26 08:57:36 tb Exp $ */
 /*
  * Copyright (c) 2019 Kristaps Dzonsons <kristaps@bsd.lv>
  *
@@ -47,10 +47,9 @@ cms_extract_econtent(const char *fn, CMS_ContentInfo *cms, unsigned char **res,
 	}
 
 	/*
-	 * Extract and duplicate the eContent.
-	 * The CMS framework offers us no other way of easily managing
-	 * this information; and since we're going to d2i it anyway,
-	 * simply pass it as the desired underlying types.
+	 * The eContent in os is owned by the cms object and it has to outlive
+	 * it for further processing by the signedObject handlers. Since there
+	 * is no convenient API for this purpose, duplicate it by hand.
 	 */
 	if ((*res = malloc((*os)->length)) == NULL)
 		err(1, NULL);
@@ -100,7 +99,7 @@ cms_parse_validate_internal(X509 **xp, const char *fn, const unsigned char *der,
 	CMS_ContentInfo			*cms;
 	long				 version;
 	STACK_OF(X509)			*certs = NULL;
-	STACK_OF(X509_CRL)		*crls;
+	STACK_OF(X509_CRL)		*crls = NULL;
 	STACK_OF(CMS_SignerInfo)	*sinfos;
 	CMS_SignerInfo			*si;
 	EVP_PKEY			*pkey;
@@ -311,10 +310,10 @@ cms_parse_validate_internal(X509 **xp, const char *fn, const unsigned char *der,
 
 	/*
 	 * Check that there are no CRLS in this CMS message.
+	 * XXX - can only error check for OpenSSL >= 3.4.
 	 */
 	crls = CMS_get1_crls(cms);
-	if (crls != NULL) {
-		sk_X509_CRL_pop_free(crls, X509_CRL_free);
+	if (crls != NULL && sk_X509_CRL_num(crls) != 0) {
 		warnx("%s: RFC 6488: CMS has CRLs", fn);
 		goto out;
 	}
@@ -365,6 +364,7 @@ cms_parse_validate_internal(X509 **xp, const char *fn, const unsigned char *der,
 		X509_free(*xp);
 		*xp = NULL;
 	}
+	sk_X509_CRL_pop_free(crls, X509_CRL_free);
 	sk_X509_free(certs);
 	CMS_ContentInfo_free(cms);
 	return rc;

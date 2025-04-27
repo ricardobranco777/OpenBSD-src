@@ -1,4 +1,4 @@
-/*	$OpenBSD: audio.c,v 1.208 2024/08/20 07:44:36 mvs Exp $	*/
+/*	$OpenBSD: audio.c,v 1.211 2025/02/14 13:29:00 ratchov Exp $	*/
 /*
  * Copyright (c) 2015 Alexandre Ratchov <alex@caoua.org>
  *
@@ -88,8 +88,7 @@ struct audio_buf {
 };
 
 #if NWSKBD > 0
-struct wskbd_vol
-{
+struct wskbd_vol {
 	int val;			/* index of the value control */
 	int mute;			/* index of the mute control */
 	int step;			/* increment/decrement step */
@@ -232,6 +231,9 @@ struct mutex audio_lock = MUTEX_INITIALIZER(IPL_AUDIO);
  * mixerctl setting is record.enable=sysctl
  */
 int audio_record_enable = 0;	/* [a] */
+#if NWSKBD > 0
+int audio_kbdcontrol_enable = 1;	/* [a] */
+#endif
 
 #ifdef AUDIO_DEBUG
 /*
@@ -1753,9 +1755,6 @@ audio_ioctl(struct audio_softc *sc, unsigned long cmd, void *addr)
 		tsleep_nsec(&sc->quiesce, 0, "au_qio", INFSLP);
 
 	switch (cmd) {
-	case FIONBIO:
-		/* All handled in the upper FS layer. */
-		break;
 	case AUDIO_GETPOS:
 		mtx_enter(&audio_lock);
 		ap = (struct audio_pos *)addr;
@@ -1908,9 +1907,6 @@ audio_ioctl_mixer(struct audio_softc *sc, unsigned long cmd, void *addr,
 		tsleep_nsec(&sc->quiesce, 0, "mix_qio", INFSLP);
 
 	switch (cmd) {
-	case FIONBIO:
-		/* All handled in the upper FS layer. */
-		break;
 	case AUDIO_MIXER_DEVINFO:
 		return audio_mixer_devinfo(sc, addr);
 	case AUDIO_MIXER_READ:

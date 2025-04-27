@@ -1,4 +1,4 @@
-/* $OpenBSD: krl.c,v 1.59.6.1 2025/02/18 08:17:27 bluhm Exp $ */
+/* $OpenBSD: krl.c,v 1.60 2025/02/18 08:02:48 djm Exp $ */
 /*
  * Copyright (c) 2012 Damien Miller <djm@mindrot.org>
  *

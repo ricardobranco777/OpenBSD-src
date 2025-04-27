@@ -1,4 +1,4 @@
-/*	$OpenBSD: syscall_mi.h,v 1.35 2024/09/01 03:09:01 jsg Exp $	*/
+/*	$OpenBSD: syscall_mi.h,v 1.37 2024/12/27 11:57:16 mpi Exp $	*/
 
 /*
  * Copyright (c) 1982, 1986, 1989, 1993
@@ -34,7 +34,6 @@
 #include <sys/param.h>
 #include <sys/pledge.h>
 #include <sys/acct.h>
-#include <sys/syslog.h>
 #include <sys/tracepoint.h>
 #include <sys/syscall.h>
 #include <sys/signalvar.h>
@@ -152,9 +151,7 @@ mi_syscall(struct proc *p, register_t code, const struct sysent *callp,
 #ifdef KTRACE
 	if (KTRPOINT(p, KTR_SYSCALL)) {
 		/* convert to mask, then include with code */
-		KERNEL_LOCK();
 		ktrsyscall(p, code, callp->sy_argsize, argp);
-		KERNEL_UNLOCK();
 	}
 #endif
 
@@ -203,11 +200,8 @@ mi_syscall_return(struct proc *p, register_t code, int error,
 	userret(p);
 
 #ifdef KTRACE
-	if (KTRPOINT(p, KTR_SYSRET)) {
-		KERNEL_LOCK();
+	if (KTRPOINT(p, KTR_SYSRET))
 		ktrsysret(p, code, error, retval);
-		KERNEL_UNLOCK();
-	}
 #endif
 }
 
@@ -238,11 +232,8 @@ mi_child_return(struct proc *p)
 	userret(p);
 
 #ifdef KTRACE
-	if (KTRPOINT(p, KTR_SYSRET)) {
-		KERNEL_LOCK();
+	if (KTRPOINT(p, KTR_SYSRET))
 		ktrsysret(p, code, 0, child_retval);
-		KERNEL_UNLOCK();
-	}
 #endif
 }
 

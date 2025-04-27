@@ -2,7 +2,7 @@
  * THIS FILE AUTOMATICALLY GENERATED.  DO NOT EDIT.
  *
  * generated from:
- *	OpenBSD: pcidevs,v 1.2090 2024/09/23 03:59:03 jsg Exp 
+ *	OpenBSD: pcidevs,v 1.2099 2025/03/07 15:06:58 deraadt Exp 
  */
 
 /*	$NetBSD: pcidevs,v 1.30 1997/06/24 06:20:24 thorpej Exp $	*/
@@ -2645,35 +2645,107 @@ static const struct pci_known_product pci_known_products[] = {
 	},
 	{
 	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_EMAG_PCIE_1,
-	    "eMAG PCIE",
+	    "eMAG PCIe",
 	},
 	{
 	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_EMAG_PCIE_2,
-	    "eMAG PCIE",
+	    "eMAG PCIe",
 	},
 	{
 	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_EMAG_PCIE_3,
-	    "eMAG PCIE",
+	    "eMAG PCIe",
 	},
 	{
 	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_EMAG_PCIE_4,
-	    "eMAG PCIE",
+	    "eMAG PCIe",
 	},
 	{
 	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_EMAG_PCIE_5,
-	    "eMAG PCIE",
+	    "eMAG PCIe",
 	},
 	{
 	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_EMAG_PCIE_6,
-	    "eMAG PCIE",
+	    "eMAG PCIe",
 	},
 	{
 	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_EMAG_PCIE_7,
-	    "eMAG PCIE",
+	    "eMAG PCIe",
 	},
 	{
 	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_EMAG_PCIE_8,
-	    "eMAG PCIE",
+	    "eMAG PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A,
+	    "Altra PCIe Root",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A0,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A1,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A2,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A3,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A4,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A5,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A6,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_A7,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B,
+	    "Altra PCIe Root",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B0,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B1,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B2,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B3,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B4,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B5,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B6,
+	    "Altra PCIe",
+	},
+	{
+	    PCI_VENDOR_AMPERE, PCI_PRODUCT_AMPERE_ALTRA_PCIE_B7,
+	    "Altra PCIe",
 	},
 	{
 	    PCI_VENDOR_ANTARES, PCI_PRODUCT_ANTARES_TC9021,
@@ -3364,6 +3436,10 @@ static const struct pci_known_product pci_known_products[] = {
 	    "AR5211Ref",
 	},
 	{
+	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_KRACKAN_POINT,
+	    "Krackan Point",
+	},
+	{
 	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_KAVERI_1,
 	    "Kaveri",
 	},
@@ -3490,6 +3566,10 @@ static const struct pci_known_product pci_known_products[] = {
 	{
 	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_STRIX_POINT,
 	    "Strix Point",
+	},
+	{
+	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_STRIX_HALO,
+	    "Strix Halo",
 	},
 	{
 	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_PHOENIX_1,
@@ -6780,6 +6860,10 @@ static const struct pci_known_product pci_known_products[] = {
 	    "Navi 31",
 	},
 	{
+	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_NAVI31_5,
+	    "Navi 31",
+	},
+	{
 	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_NAVI31_4,
 	    "Navi 31",
 	},
@@ -6830,6 +6914,10 @@ static const struct pci_known_product pci_known_products[] = {
 	{
 	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_MI300X,
 	    "MI300X",
+	},
+	{
+	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_NAVI48,
+	    "Navi 48",
 	},
 	{
 	    PCI_VENDOR_ATI, PCI_PRODUCT_ATI_RADEON_9000IGP,
@@ -10386,6 +10474,10 @@ static const struct pci_known_product pci_known_products[] = {
 	{
 	    PCI_VENDOR_EXAR, PCI_PRODUCT_EXAR_XR17C158,
 	    "XR17C158",
+	},
+	{
+	    PCI_VENDOR_EXAR, PCI_PRODUCT_EXAR_XR17V352,
+	    "XR17V352",
 	},
 	{
 	    PCI_VENDOR_EXAR, PCI_PRODUCT_EXAR_XR17V354,
@@ -13986,6 +14078,14 @@ static const struct pci_known_product pci_known_products[] = {
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_XXV710_25G_SFP28,
 	    "XXV710 SFP28",
+	},
+	{
+	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_E810_XXV_QSFP,
+	    "E810 XXV QSFP",
+	},
+	{
+	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_E810_XXV_SFP,
+	    "E810 XXV SFP",
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_I218_LM_2,
@@ -23104,7 +23204,15 @@ static const struct pci_known_product pci_known_products[] = {
 	    "Graphics",
 	},
 	{
+	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_ARL_U_GT_1,
+	    "Graphics",
+	},
+	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_MTL_U_GT_1,
+	    "Graphics",
+	},
+	{
+	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_ARL_H_GT_1,
 	    "Graphics",
 	},
 	{
@@ -23113,6 +23221,14 @@ static const struct pci_known_product pci_known_products[] = {
 	},
 	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_MTL_U_GT_2,
+	    "Graphics",
+	},
+	{
+	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_ARL_S_GT_1,
+	    "Graphics",
+	},
+	{
+	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_ARL_H_GT_2,
 	    "Graphics",
 	},
 	{
@@ -26660,6 +26776,10 @@ static const struct pci_known_product pci_known_products[] = {
 	    "21154AE/BE",
 	},
 	{
+	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_ARL_S_GT_2,
+	    "Graphics",
+	},
+	{
 	    PCI_VENDOR_INTEL, PCI_PRODUCT_INTEL_CORE_DMI_0,
 	    "Core DMI",
 	},
@@ -26918,6 +27038,10 @@ static const struct pci_known_product pci_known_products[] = {
 	{
 	    PCI_VENDOR_KINGSTON, PCI_PRODUCT_KINGSTON_KC3000,
 	    "KC3000",
+	},
+	{
+	    PCI_VENDOR_KINGSTON, PCI_PRODUCT_KINGSTON_SNV2S,
+	    "SNV2S",
 	},
 	{
 	    PCI_VENDOR_KINGSTON, PCI_PRODUCT_KINGSTON_NV2,
@@ -32577,35 +32701,35 @@ static const struct pci_known_product pci_known_products[] = {
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_SM951_NVME,
-	    "SM951/PM951 NVMe",
+	    "SM951/PM951",
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_SM961_NVME,
-	    "SM961/PM961 NVMe",
+	    "SM961/PM961",
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_SM981_NVME,
-	    "SM981/PM981 NVMe",
+	    "SM981/PM981",
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_PM991_NVME,
-	    "PM991 NVMe",
+	    "PM991",
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_PM9A1_NVME,
-	    "PM9A1 NVMe",
+	    "PM9A1",
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_PM9B1_NVME,
-	    "PM9B1 NVMe",
+	    "PM9B1",
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_PM9C1_NVME,
-	    "PM9C1 NVMe",
+	    "PM9C1",
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_PM9C1A_NVME,
-	    "PM9C1a NVMe",
+	    "PM9C1a",
 	},
 	{
 	    PCI_VENDOR_SAMSUNG2, PCI_PRODUCT_SAMSUNG2_NVME_171X,
@@ -32621,11 +32745,11 @@ static const struct pci_known_product pci_known_products[] = {
 	},
 	{
 	    PCI_VENDOR_SANDISK, PCI_PRODUCT_SANDISK_WDSXXXG1X0C,
-	    "WD Black NVMe",
+	    "WD Black",
 	},
 	{
 	    PCI_VENDOR_SANDISK, PCI_PRODUCT_SANDISK_WDSXXXG2X0C,
-	    "WD Black NVMe",
+	    "WD Black",
 	},
 	{
 	    PCI_VENDOR_SANDISK, PCI_PRODUCT_SANDISK_PCSN520_1,
@@ -32641,7 +32765,7 @@ static const struct pci_known_product pci_known_products[] = {
 	},
 	{
 	    PCI_VENDOR_SANDISK, PCI_PRODUCT_SANDISK_WDSXXXG3X0C,
-	    "WD Black NVMe",
+	    "WD Black",
 	},
 	{
 	    PCI_VENDOR_SANDISK, PCI_PRODUCT_SANDISK_PCSN530,
@@ -33368,8 +33492,20 @@ static const struct pci_known_product pci_known_products[] = {
 	    "PC601",
 	},
 	{
+	    PCI_VENDOR_SKHYNIX, PCI_PRODUCT_SKHYNIX_SHGP31,
+	    "Gold P31",
+	},
+	{
+	    PCI_VENDOR_SKHYNIX, PCI_PRODUCT_SKHYNIX_SHPP41,
+	    "Platinum P41",
+	},
+	{
 	    PCI_VENDOR_SKHYNIX, PCI_PRODUCT_SKHYNIX_BC901,
 	    "BC901",
+	},
+	{
+	    PCI_VENDOR_SKHYNIX, PCI_PRODUCT_SKHYNIX_PE8000,
+	    "PE8000",
 	},
 	{
 	    PCI_VENDOR_SMC, PCI_PRODUCT_SMC_83C170,
@@ -33421,7 +33557,7 @@ static const struct pci_known_product pci_known_products[] = {
 	},
 	{
 	    PCI_VENDOR_SMI, PCI_PRODUCT_SMI_SM2260,
-	    "SM2260 NVMe",
+	    "SM2260",
 	},
 	{
 	    PCI_VENDOR_SMSC, PCI_PRODUCT_SMSC_VICTORY66_IDE_1,
