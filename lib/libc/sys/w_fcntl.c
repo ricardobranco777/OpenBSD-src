@@ -29,6 +29,7 @@ fcntl(int fd, int cmd, ...)
 	switch (cmd) {
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
+	case F_DUPFD_CLOFORK:
 	case F_SETFD:
 	case F_SETFL:
 	case F_SETOWN:

@@ -115,6 +115,7 @@ struct filedesc0 {
  */
 #define	UF_EXCLOSE 	0x01		/* auto-close on exec */
 #define	UF_PLEDGED 	0x02		/* open after pledge(2) */
+#define	UF_FORKCLOSE 	0x04		/* auto-close on fork */
 
 /*
  * Flags on the file descriptor table.
@@ -143,7 +144,7 @@ void	fdfree(struct proc *p);
 int	fdrelease(struct proc *p, int);
 void	fdinsert(struct filedesc *, int, int, struct file *);
 void	fdremove(struct filedesc *, int);
-void	fdcloseexec(struct proc *);
+void	fdprepforexec(struct proc *);
 struct file *fd_iterfile(struct file *, struct proc *);
 struct file *fd_getfile(struct filedesc *, int);
 struct file *fd_getfile_mode(struct filedesc *, int, int);

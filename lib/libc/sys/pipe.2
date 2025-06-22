@@ -79,15 +79,14 @@ The
 .Fn pipe2
 function is identical to
 .Fn pipe
-except that the non-blocking I/O mode on both ends of the pipe is
+except that the non-blocking I/O mode,
+close-on-exec flag,
+and close-on-fork flag are
 determined by the
-.Dv O_NONBLOCK
-flag in the
-.Fa flags
-argument and the close-on-exec flag on both the new file descriptors
-is determined by the
-.Dv O_CLOEXEC
-flag in the
+.Dv O_NONBLOCK , O_CLOEXEC ,
+and
+.Dv O_CLOFORK
+flags, respectively, in the
 .Fa flags
 argument.
 .Sh RETURN VALUES
@@ -125,11 +124,10 @@ is invalid.
 .Sh STANDARDS
 The
 .Fn pipe
-function conforms to
-.St -p1003.1-2008 .
-The
+and
 .Fn pipe2
-function is expected to conform to a future revision of that standard.
+functions conform to
+.St -p1003.1-2024 .
 .Pp
 As an extension, the pipe provided is actually capable of moving
 data bidirectionally.

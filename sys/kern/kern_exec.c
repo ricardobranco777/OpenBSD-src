@@ -272,6 +272,7 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 	struct ps_strings arginfo;
 	struct vmspace *vm = p->p_vmspace;
 	struct vnode *otvp;
+	int i;
 
 	/*
 	 * Get other threads to stop, if contested return ERESTART,
@@ -531,7 +532,7 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 	}
 
 	stopprofclock(pr);	/* stop profiling */
-	fdcloseexec(p);		/* handle close on exec */
+	fdprepforexec(p);	/* handle close on exec and close on fork */
 	execsigs(p);		/* reset caught signals */
 	TCB_SET(p, NULL);	/* reset the TCB address */
 	pr->ps_kbind_addr = 0;	/* reset the kbind bits */
@@ -601,8 +602,6 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 	 * MNT_NOEXEC has already been used to disable s[ug]id.
 	 */
 	if ((attr.va_mode & (VSUID | VSGID)) && proc_cansugid(p)) {
-		int i;
-
 		atomic_setbits_int(&pr->ps_flags, PS_SUGID|PS_SUGIDEXEC);
 
 #ifdef KTRACE
@@ -618,66 +617,63 @@ sys_execve(struct proc *p, void *v, register_t *retval)
 			cred->cr_uid = attr.va_uid;
 		if (attr.va_mode & VSGID)
 			cred->cr_gid = attr.va_gid;
-
-		/*
-		 * For set[ug]id processes, a few caveats apply to
-		 * stdin, stdout, and stderr.
-		 */
-		error = 0;
-		fdplock(p->p_fd);
-		for (i = 0; i < 3; i++) {
-			struct file *fp = NULL;
-
-			/*
-			 * NOTE - This will never return NULL because of
-			 * immature fds. The file descriptor table is not
-			 * shared because we're suid.
-			 */
-			fp = fd_getfile(p->p_fd, i);
-
-			/*
-			 * Ensure that stdin, stdout, and stderr are already
-			 * allocated.  We do not want userland to accidentally
-			 * allocate descriptors in this range which has implied
-			 * meaning to libc.
-			 */
-			if (fp == NULL) {
-				short flags = FREAD | (i == 0 ? 0 : FWRITE);
-				struct vnode *vp;
-				int indx;
-
-				if ((error = falloc(p, &fp, &indx)) != 0)
-					break;
-#ifdef DIAGNOSTIC
-				if (indx != i)
-					panic("sys_execve: falloc indx != i");
-#endif
-				if ((error = cdevvp(getnulldev(), &vp)) != 0) {
-					fdremove(p->p_fd, indx);
-					closef(fp, p);
-					break;
-				}
-				if ((error = VOP_OPEN(vp, flags, cred, p)) != 0) {
-					fdremove(p->p_fd, indx);
-					closef(fp, p);
-					vrele(vp);
-					break;
-				}
-				if (flags & FWRITE)
-					vp->v_writecount++;
-				fp->f_flag = flags;
-				fp->f_type = DTYPE_VNODE;
-				fp->f_ops = &vnops;
-				fp->f_data = (caddr_t)vp;
-				fdinsert(p->p_fd, indx, 0, fp);
-			}
-			FRELE(fp, p);
-		}
-		fdpunlock(p->p_fd);
-		if (error)
-			goto exec_abort;
 	} else
 		atomic_clearbits_int(&pr->ps_flags, PS_SUGID);
+
+	/*
+	 * A few caveats apply to stdin, stdout, and stderr.
+	 */
+	fdplock(p->p_fd);
+	for (i = 0; i < 3; i++) {
+		struct file *fp = NULL;
+
+		/*
+		 * NOTE - This will never return NULL because of immature fds
+		 * since only kernel-threads share the file descriptor table.
+		 */
+		fp = fd_getfile(p->p_fd, i);
+
+		/*
+		 * Ensure that stdin, stdout, and stderr are already
+		 * allocated.  We do not want userland to accidentally
+		 * allocate descriptors in this range which has implied
+		 * meaning to libc.
+		 */
+		if (fp == NULL) {
+			short flags = FREAD | (i == 0 ? 0 : FWRITE);
+			struct vnode *vp;
+			int indx;
+
+			if ((error = falloc(p, &fp, &indx)) != 0)
+				break;
+#ifdef DIAGNOSTIC
+			if (indx != i)
+				panic("sys_execve: falloc indx != i");
+#endif
+			if ((error = cdevvp(getnulldev(), &vp)) != 0) {
+				fdremove(p->p_fd, indx);
+				closef(fp, p);
+				break;
+			}
+			if ((error = VOP_OPEN(vp, flags, cred, p)) != 0) {
+				fdremove(p->p_fd, indx);
+				closef(fp, p);
+				vrele(vp);
+				break;
+			}
+			if (flags & FWRITE)
+				vp->v_writecount++;
+			fp->f_flag = flags;
+			fp->f_type = DTYPE_VNODE;
+			fp->f_ops = &vnops;
+			fp->f_data = (caddr_t)vp;
+			fdinsert(p->p_fd, indx, 0, fp);
+		}
+		FRELE(fp, p);
+	}
+	fdpunlock(p->p_fd);
+	if (error)
+		goto exec_abort;
 
 	/*
 	 * Reset the saved ugids and update the process's copy of the

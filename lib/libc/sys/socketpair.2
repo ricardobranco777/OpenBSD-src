@@ -75,6 +75,8 @@ argument:
 .Bl -tag -width "SOCK_NONBLOCKX" -offset indent -compact
 .It SOCK_CLOEXEC
 Set close-on-exec flag on both the new descriptors.
+.It SOCK_CLOFORK
+Set close-on-fork flag on both the new descriptors.
 .It SOCK_NONBLOCK
 Set non-blocking I/O mode on both the new sockets.
 .El
@@ -113,12 +115,7 @@ process address space.
 The
 .Fn socketpair
 function conforms to
-.St -p1003.1-2008 .
-The
-.Dv SOCK_CLOEXEC
-and
-.Dv SOCK_NONBLOCK
-flags are expected to conform to a future revision of that standard.
+.St -p1003.1-2024 .
 .Sh HISTORY
 The
 .Fn socketpair

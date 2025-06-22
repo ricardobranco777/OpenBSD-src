@@ -58,19 +58,18 @@ call extracts the first connection request on the queue of pending
 connections, creates a new socket with the same non-blocking I/O mode as
 .Fa s ,
 and allocates a new file descriptor for the socket with the
-close-on-exec flag clear.
+close-on-exec and close-on-fork flags clear.
 .Pp
 The
 .Fn accept4
-system call is similar, however the non-blocking I/O mode of the
-new socket is determined by the
-.Dv SOCK_NONBLOCK
-flag in the
-.Fa flags
-argument and the close-on-exec flag on the new file descriptor is
+system call is similar, however the non-blocking I/O mode,
+close-on-exec flag,
+and close-on-fork flag on the new file descriptor are
 determined by the
-.Dv SOCK_CLOEXEC
-flag in the
+.Dv SOCK_NONBLOCK , SOCK_CLOEXEC ,
+and
+.Dv SOCK_CLOFORK
+flags, respectively, in the
 .Fa flags
 argument.
 .Pp
@@ -204,11 +203,10 @@ is invalid.
 .Sh STANDARDS
 The
 .Fn accept
-function conforms to
-.St -p1003.1-2008 .
-The
+and
 .Fn accept4
-function is expected to conform to a future revision of that standard.
+functions conform to
+.St -p1003.1-2024 .
 .Sh HISTORY
 The
 .Fn accept

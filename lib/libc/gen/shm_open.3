@@ -45,7 +45,7 @@ and must include at least
 or
 .Dv O_RDWR
 and may also include a combination of
-.Dv O_CREAT , O_EXCL , O_CLOEXEC , O_NOFOLLOW ,
+.Dv O_CREAT , O_EXCL , O_CLOEXEC , O_CLOFORK , O_NOFOLLOW ,
 or
 .Dv O_TRUNC .
 This implementation forces the
@@ -82,7 +82,8 @@ and
 appear in
 .St -p1003.1-2001 .
 Using
-.Dv O_CLOEXEC
+.Dv O_CLOEXEC ,
+.Dv O_CLOFORK ,
 or
 .Dv O_NOFOLLOW
 with

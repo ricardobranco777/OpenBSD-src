@@ -103,6 +103,8 @@ argument:
 .Bl -tag -width "SOCK_NONBLOCKX" -offset indent -compact
 .It SOCK_CLOEXEC
 Set close-on-exec flag on the new descriptor.
+.It SOCK_CLOFORK
+Set close-on-fork flag on the new descriptor.
 .It SOCK_NONBLOCK
 Set non-blocking I/O mode on the new socket.
 .It SOCK_DNS
@@ -282,12 +284,7 @@ is denied.
 The
 .Fn socket
 function conforms to
-.St -p1003.1-2008 .
-The
-.Dv SOCK_CLOEXEC
-and
-.Dv SOCK_NONBLOCK
-flags are expected to conform to a future revision of that standard.
+.St -p1003.1-2024 .
 .Pp
 The
 .Dv SOCK_DNS

@@ -20,7 +20,8 @@
 #include <fcntl.h>
 #include <stdlib.h>
 
-#define MKOSTEMP_FLAGS	(O_APPEND | O_CLOEXEC | O_DSYNC | O_RSYNC | O_SYNC)
+#define MKOSTEMP_FLAGS \
+	(O_APPEND | O_CLOEXEC | O_CLOFORK | O_DSYNC | O_RSYNC | O_SYNC)
 
 static int
 mkstemp_cb(const char *path, int flags)

@@ -86,7 +86,8 @@ object reference to the file must be obtained by issuing an
 additional
 .Xr open 2
 call.
-The close-on-exec flag on the new file descriptor is unset.
+The close-on-exec and close-on-fork flags on the new file descriptor
+are unset.
 .Pp
 In
 .Fn dup2 ,
@@ -101,18 +102,21 @@ When
 equals
 .Fa oldd ,
 .Fn dup2
-just returns without affecting the close-on-exec flag.
+just returns without affecting the close-on-exec or close-on-fork flags.
 .Pp
 In
 .Fn dup3 ,
-both the value of the new descriptor and the close-on-exec flag on
-the new file descriptor are specified:
+the value of the new descriptor and the close-on-exec and close-on-fork
+flags on
+the new file descriptor are all specified:
 .Fa newd
 specifies the value and the
 .Dv O_CLOEXEC
-bit in
+and
+.Dv O_CLOFORK
+bits in
 .Fa flags
-specifies the close-on-exec flag.
+specify the close-on-exec and close-on-forks flag, respectively.
 Unlike
 .Fn dup2 ,
 if
@@ -192,14 +196,13 @@ is invalid.
 .Xr socketpair 2 ,
 .Xr getdtablesize 3
 .Sh STANDARDS
-.Fn dup
-and
-.Fn dup2
-conform to
-.St -p1003.1-2008 .
 The
+.Fn dup ,
+.Fn dup2 ,
+and
 .Fn dup3
-function is expected to conform to a future revision of that standard.
+functions conform to
+.St -p1003.1-2024 .
 .Sh HISTORY
 The
 .Fn dup

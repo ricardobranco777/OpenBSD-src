@@ -119,6 +119,8 @@ system call:
 Append on each write.
 .It Dv O_CLOEXEC
 Set the close-on-exec flag on the new file descriptor.
+.It Dv O_CLOFORK
+Set the close-on-fork flag on the new file descriptor.
 .It Dv O_SYNC
 Perform synchronous I/O operations.
 .El
@@ -345,18 +347,16 @@ function.
 .Xr tmpnam 3
 .Sh STANDARDS
 The
-.Fn mkdtemp
+.Fn mkdtemp ,
+.Fn mkostemp ,
 and
 .Fn mkstemp
 functions conform to the
-.St -p1003.1-2008
+.St -p1003.1-2024
 specification.
 The ability to specify more than six
 .Em X Ns s
 is an extension to that standard.
-The
-.Fn mkostemp
-function is expected to conform to a future revision of that standard.
 .Pp
 The
 .Fn mktemp

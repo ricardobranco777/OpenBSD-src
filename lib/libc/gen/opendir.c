@@ -82,7 +82,9 @@ fdopendir(int fd)
 		 * POSIX doesn't require fdopendir() to set
 		 * FD_CLOEXEC, so it's okay for this to fail.
 		 */
-		(void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+		flags = fcntl(fd, F_GETFD);
+		if (flags != -1 && (flags & FD_CLOEXEC) == 0)
+			(void)fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
 	}
 	return (dirp);
 }
